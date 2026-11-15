@@ -28,7 +28,7 @@ def trim_history(
 ) -> list[BaseMessage]:
     result = list(messages)
     if keep_last < len(result):
-        result = result[-keep_last:]
+        result = result[-keep_last:] if keep_last > 0 else []
     while count_tokens(result) > max_tokens:
         result.pop(0)
     return result

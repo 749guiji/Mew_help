@@ -19,3 +19,8 @@ def test_trim_history_keeps_recent_within_budget():
 def test_count_tokens_positive_int():
     n = count_tokens([HumanMessage("你好,世界,这个订单什么时候发货")])
     assert isinstance(n, int) and n > 0
+
+def test_trim_history_keep_last_zero_returns_empty():
+    msgs = [HumanMessage("a"), HumanMessage("b")]
+    out = trim_history(msgs, max_tokens=10_000, keep_last=0)
+    assert out == []
