@@ -9,3 +9,17 @@ def test_root_serves_index():
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert "客服" in r.text
+
+
+def test_style_served():
+    with TestClient(app) as c:
+        r = c.get("/style.css")
+    assert r.status_code == 200
+    assert "text/css" in r.headers["content-type"]
+
+
+def test_script_served():
+    with TestClient(app) as c:
+        r = c.get("/app.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
