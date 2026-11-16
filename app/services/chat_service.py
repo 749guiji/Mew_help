@@ -1,8 +1,9 @@
+import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage, ToolMessage
 
 from app.core.config import get_settings
 from app.core.llm import get_llm
@@ -24,7 +25,7 @@ class ChatService:
     ):
         settings = get_settings()
         self._llm = llm if llm is not None else get_llm(settings)
-        self._tools = tools or ALL_TOOLS
+        self._tools = tools if tools is not None else ALL_TOOLS
         self._executor = executor if executor is not None else ToolExecutor()
         self._max_tokens = settings.max_history_tokens
         self._max_messages = settings.max_history_messages
@@ -44,7 +45,10 @@ class ChatService:
                     s.commit()
                     s.refresh(conv)
                 return conv.id
-        except Exception:
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "Failed to resolve/create conversation for %s: %s", sid, e
+            )
             return None
 
     def _save_message(
@@ -70,8 +74,13 @@ class ChatService:
                     )
                 )
                 s.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "Failed to save message (role=%s) for conversation %s: %s",
+                role,
+                conv_id,
+                e,
+            )
 
     async def stream_chat(
         self, session_id: str | None, message: str
@@ -88,9 +97,17 @@ class ChatService:
                 trim_history(history, self._max_tokens, self._max_messages), message
             )
 
-            ai_msg = await self._llm.bind_tools(self._tools).ainvoke(messages)
+            # Stream the tool-aware model once and aggregate the chunks. Non-tool
+            # replies are emitted token-by-token as they arrive; a tool decision is
+            # detected only after the stream ends.
+            ai_msg: AIMessageChunk | None = None
+            async for chunk in self._llm.bind_tools(self._tools).astream(messages):
+                ai_msg = chunk if ai_msg is None else ai_msg + chunk
+                content = chunk.content
+                if content:
+                    yield {"type": "token", "content": content}
 
-            if ai_msg.tool_calls:
+            if ai_msg is not None and ai_msg.tool_calls:
                 messages.append(ai_msg)
 
                 results: list[tuple[dict, str]] = []
@@ -99,7 +116,8 @@ class ChatService:
                     for tc in ai_msg.tool_calls:
                         yield {"type": "tool", "name": tc["name"], "status": "running"}
                         result = await self._executor.execute(tc["name"], tc["args"])
-                        yield {"type": "tool", "name": tc["name"], "status": "done"}
+                        status = "error" if result.startswith("[工具错误]") else "done"
+                        yield {"type": "tool", "name": tc["name"], "status": status}
                         results.append((tc, result))
                         messages.append(
                             ToolMessage(
@@ -123,6 +141,8 @@ class ChatService:
                         conv_id, role="tool", content=result, tool_call_id=tc["id"]
                     )
 
+                # Final convergence stream uses the UNBOUND model so the model
+                # cannot trigger a second tool call in the same turn.
                 reply_parts: list[str] = []
                 async for chunk in self._llm.astream(messages):
                     content = chunk.content
@@ -134,14 +154,12 @@ class ChatService:
 
                 self._save_message(conv_id, role="assistant", content=reply)
             else:
-                reply = ai_msg.content
-                if reply:
-                    yield {"type": "token", "content": reply}
+                reply = ai_msg.content if ai_msg is not None else ""
                 self._save_message(conv_id, role="user", content=message)
                 self._save_message(conv_id, role="assistant", content=reply)
 
             history.append(HumanMessage(content=message))
-            history.append(AIMessage(content=reply))
+            history.append(AIMessage(content=reply or ""))
 
             yield {"type": "done"}
         except Exception as e:

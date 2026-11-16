@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
@@ -14,7 +16,12 @@ from app.tools.executor import ToolExecutor
 
 
 class FakeLLM:
-    """Stub LLM: ainvoke may return tool_calls; astream streams the final answer."""
+    """Stub LLM.
+
+    ``bind_tools`` returns a bound wrapper whose ``astream`` either streams the
+    tool-call decision (as tool_call_chunks) or the plain answer chunks. The
+    unbound ``astream`` always streams the plain answer chunks.
+    """
 
     def __init__(self, reply="直接回答", tool_calls=None, chunks=None):
         self.reply = reply
@@ -25,7 +32,7 @@ class FakeLLM:
 
     def bind_tools(self, tools):
         self.bound_tools = tools
-        return self
+        return _BoundFakeLLM(self)
 
     async def ainvoke(self, messages):
         self.invokes.append([m.content for m in messages])
@@ -39,11 +46,42 @@ class FakeLLM:
             yield AIMessageChunk(content=c)
 
 
+class _BoundFakeLLM:
+    def __init__(self, base: FakeLLM):
+        self.base = base
+
+    async def astream(self, messages):
+        self.base.streams.append([m.content for m in messages])
+        if self.base.tool_calls is not None:
+            for tc in self.base.tool_calls:
+                yield AIMessageChunk(
+                    content="",
+                    tool_call_chunks=[
+                        {
+                            "name": tc["name"],
+                            "args": json.dumps(tc["args"], ensure_ascii=False),
+                            "id": tc["id"],
+                            "index": 0,
+                        }
+                    ],
+                )
+        else:
+            for c in self.base.chunks:
+                yield AIMessageChunk(content=c)
+
+
 class _FakeTool:
     name = "query_faq"
 
     async def ainvoke(self, args):
         return "退货政策：7天无理由退货"
+
+
+class _FailingTool:
+    name = "boom"
+
+    async def ainvoke(self, args):
+        raise RuntimeError("kaput")
 
 
 @pytest.fixture(autouse=True)
@@ -76,7 +114,7 @@ def test_second_turn_receives_history():
     e1 = asyncio.run(collect(svc.stream_chat(None, "我的订单123没发货")))
     sid = e1[0]["session_id"]
     asyncio.run(collect(svc.stream_chat(sid, "那帮我催一下")))
-    second = fake.invokes[1]
+    second = fake.streams[1]
     assert any("我的订单123没发货" in m for m in second)
     assert any("那帮我催一下" in m for m in second)
 
@@ -127,3 +165,60 @@ def test_stream_chat_emits_tool_frame_and_persists(sqlite_session_local):
         assert rows[2].tool_call_id == "call_1"
         assert rows[2].content == "退货政策：7天无理由退货"
         assert rows[3].content == "根据FAQ，7天无理由退货。"
+
+
+def test_no_tool_path_streams_multiple_tokens():
+    fake = FakeLLM(reply="这是直接回答", chunks=["这", "是", "直接", "回答"])
+    svc = ChatService(fake)
+    ev = asyncio.run(collect(svc.stream_chat(None, "你好")))
+    tokens = [e["content"] for e in ev if e["type"] == "token"]
+    assert tokens == ["这", "是", "直接", "回答"]
+    assert len(tokens) == 4
+    assert len(fake.streams) == 1
+    assert ev[-1]["type"] == "done"
+
+
+def test_failing_tool_yields_error_status(sqlite_session_local):
+    fake = FakeLLM(
+        reply="重试一下吧",
+        tool_calls=[{"name": "boom", "args": {}, "id": "call_1"}],
+        chunks=["重试一下吧"],
+    )
+    svc = ChatService(
+        llm=fake,
+        tools=[_FailingTool()],
+        executor=ToolExecutor(registry={"boom": _FailingTool()}, retries=0),
+    )
+    ev = asyncio.run(collect(svc.stream_chat(None, "帮我查一下")))
+    assert [e for e in ev if e["type"] == "tool"] == [
+        {"type": "tool", "name": "boom", "status": "running"},
+        {"type": "tool", "name": "boom", "status": "error"},
+    ]
+
+
+def test_empty_tools_list_is_respected():
+    fake = FakeLLM(reply="ok")
+    svc = ChatService(fake, tools=[])
+    asyncio.run(collect(svc.stream_chat(None, "hi")))
+    assert fake.bound_tools == []
+
+
+def test_history_ai_content_never_none():
+    fake = FakeLLM(reply="", chunks=[])
+    svc = ChatService(fake)
+    ev = asyncio.run(collect(svc.stream_chat(None, "hi")))
+    sid = ev[0]["session_id"]
+    assert svc._sessions[sid][-1].content == ""
+
+
+def test_db_failure_is_logged_and_swallowed(monkeypatch, caplog):
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(chat_service_module, "SessionLocal", boom)
+    fake = FakeLLM(reply="ok")
+    svc = ChatService(fake)
+    with caplog.at_level(logging.WARNING, logger="app.services.chat_service"):
+        ev = asyncio.run(collect(svc.stream_chat(None, "hi")))
+    assert ev[-1]["type"] == "done"
+    assert "db down" in caplog.text
