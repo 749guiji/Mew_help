@@ -32,11 +32,40 @@ function setStreaming(on) {
   sendBtn.disabled = on;
 }
 
-function dispatch(evt, textSpan) {
+const TOOL_LABELS = {
+  query_order: "查询订单",
+  query_product: "查询商品",
+  query_logistics: "查询物流",
+  query_faq: "查询常见问题",
+  create_ticket: "创建工单",
+};
+
+function toolLabel(name) {
+  return TOOL_LABELS[name] || name;
+}
+
+function renderToolBadge(badgeEl, evt) {
+  const label = toolLabel(evt.name);
+  if (evt.status === "running") {
+    badgeEl.className = "tool-badge visible running";
+    badgeEl.textContent = "🔧 正在" + label + "…";
+  } else if (evt.status === "done") {
+    badgeEl.className = "tool-badge visible done";
+    badgeEl.textContent = "🔧 " + label + " ✓";
+  } else if (evt.status === "error") {
+    badgeEl.className = "tool-badge visible error";
+    badgeEl.textContent = "🔧 " + label + " 出错";
+  }
+}
+
+function dispatch(evt, textSpan, badgeEl) {
   if (evt.type === "meta") {
     state.sessionId = evt.session_id;
   } else if (evt.type === "token") {
     textSpan.textContent += evt.content;
+    scrollToBottom();
+  } else if (evt.type === "tool") {
+    renderToolBadge(badgeEl, evt);
     scrollToBottom();
   } else if (evt.type === "error") {
     textSpan.textContent += "\n[出错了] " + evt.message;
@@ -44,7 +73,7 @@ function dispatch(evt, textSpan) {
   }
 }
 
-function handleSSE(chunk, textSpan) {
+function handleSSE(chunk, textSpan, badgeEl) {
   sseBuffer += chunk;
   const parts = sseBuffer.split("\n\n");
   sseBuffer = parts.pop();
@@ -52,7 +81,7 @@ function handleSSE(chunk, textSpan) {
     for (const line of part.split("\n")) {
       if (line.startsWith("data: ")) {
         try {
-          dispatch(JSON.parse(line.slice(6)), textSpan);
+          dispatch(JSON.parse(line.slice(6)), textSpan, badgeEl);
         } catch (err) {
           // 忽略无法解析的帧
         }
@@ -68,6 +97,10 @@ async function send() {
 
   appendBubble("user", text);
   const contentEl = appendBubble("assistant", "");
+
+  const badgeEl = document.createElement("div");
+  badgeEl.className = "tool-badge";
+  contentEl.appendChild(badgeEl);
 
   const textSpan = document.createElement("span");
   textSpan.className = "text";
@@ -90,7 +123,7 @@ async function send() {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      handleSSE(decoder.decode(value, { stream: true }), textSpan);
+      handleSSE(decoder.decode(value, { stream: true }), textSpan, badgeEl);
     }
   } catch (err) {
     textSpan.textContent += "\n[出错了] " + err.message;

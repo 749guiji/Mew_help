@@ -161,6 +161,35 @@ body {
   }
 }
 
+.tool-badge {
+  display: none;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.tool-badge.visible {
+  display: inline-block;
+}
+
+.tool-badge.running {
+  color: var(--brand);
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.tool-badge.done {
+  color: var(--online);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.tool-badge.error {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+}
+
 .input-area {
   display: flex;
   gap: 10px;
