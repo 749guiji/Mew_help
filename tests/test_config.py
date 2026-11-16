@@ -13,3 +13,9 @@ def test_settings_env_override(monkeypatch):
     monkeypatch.setenv("MODEL", "gpt-4o")
     s = Settings(_env_file=None)
     assert s.model == "gpt-4o"
+
+
+def test_database_url_default():
+    from app.core.config import Settings
+    s = Settings(_env_file=None)
+    assert s.database_url.startswith("mysql+pymysql://")

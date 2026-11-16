@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     temperature: float = 0.0
     max_history_tokens: int = 4000
     max_history_messages: int = 10
+    database_url: str = "mysql+pymysql://root:123456@127.0.0.1:3306/mew_help"
 
 
 @lru_cache
