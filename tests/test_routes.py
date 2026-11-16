@@ -1,7 +1,9 @@
 import json
 from fastapi.testclient import TestClient
+import app.main as main_module
 from app.main import create_app
 from app.schemas.extraction import AfterSalesExtraction
+from app.tools import ALL_TOOLS
 
 class FakeChatService:
     def __init__(self): self.last = None
@@ -9,6 +11,13 @@ class FakeChatService:
         self.last = (session_id, message)
         yield {"type": "meta", "session_id": session_id or "s1"}
         yield {"type": "token", "content": "你好"}
+        yield {"type": "done"}
+
+class FakeToolChatService:
+    def __init__(self): self.last = None
+    async def stream_chat(self, session_id, message):
+        self.last = (session_id, message)
+        yield {"type": "tool", "name": "query_faq", "status": "running"}
         yield {"type": "done"}
 
 class FakeExtractionService:
@@ -35,6 +44,23 @@ def test_chat_empty_message_422():
     with TestClient(app) as c:
         r = c.post("/chat", json={"message": "   "})
     assert r.status_code == 422
+
+def test_chat_sse_includes_tool_frame():
+    app = create_app(chat_service=FakeToolChatService())
+    with TestClient(app) as c:
+        r = c.post("/chat", json={"message": "怎么退货"})
+    assert r.status_code == 200
+    assert '"type":"tool"' in r.text
+
+def test_create_app_default_wires_tools(monkeypatch):
+    captured = {}
+    def fake_chat_service(llm=None, tools=None, executor=None):
+        captured["tools"] = tools
+        return FakeChatService()
+    monkeypatch.setattr(main_module, "get_llm", lambda: object())
+    monkeypatch.setattr(main_module, "ChatService", fake_chat_service)
+    create_app(extraction_service=FakeExtractionService())
+    assert captured["tools"] is ALL_TOOLS
 
 def test_extract_json():
     app = create_app(extraction_service=FakeExtractionService())

@@ -8,6 +8,7 @@ from app.api.routes import extract as extract_routes
 from app.core.llm import get_llm
 from app.services.chat_service import ChatService
 from app.services.extraction_service import ExtractionService, build_extraction_chain
+from app.tools import ALL_TOOLS
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -16,7 +17,7 @@ def create_app(chat_service=None, extraction_service=None) -> FastAPI:
     app = FastAPI()
 
     if chat_service is None:
-        chat_service = ChatService(get_llm())
+        chat_service = ChatService(get_llm(), tools=ALL_TOOLS)
     if extraction_service is None:
         extraction_service = ExtractionService(build_extraction_chain(get_llm()))
 
