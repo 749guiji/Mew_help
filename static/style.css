@@ -3,15 +3,16 @@
 }
 
 :root {
-  --bg: #faf5ef;
-  --surface: #ffffff;
+  --bg: #fbe6cf;
+  --surface: #fffaf3;
   --brand: #f97316;
+  --brand-light: #fb923c;
   --brand-hover: #ea580c;
-  --assistant-bubble: #fff7ed;
-  --text: #2f2a26;
-  --muted: #8a8178;
-  --online: #22c55e;
-  --border: #f0e5d8;
+  --assistant-bubble: #ffedd5;
+  --text: #3b2f26;
+  --muted: #a08a78;
+  --online: #4ade80;
+  --border: #f6dcc0;
 }
 
 html,
@@ -37,7 +38,7 @@ body {
   height: min(90vh, 760px);
   background: var(--surface);
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 32px rgba(233, 132, 42, 0.16);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -48,13 +49,14 @@ body {
   align-items: center;
   gap: 12px;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--brand-light), var(--brand-hover));
+  color: #fff;
 }
 
 .chat-header .avatar {
   width: 40px;
   height: 40px;
-  background: var(--assistant-bubble);
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -66,12 +68,13 @@ body {
 .chat-header h1 {
   font-size: 16px;
   margin: 0;
+  color: #fff;
 }
 
 .chat-header .status {
   margin: 2px 0 0;
   font-size: 12px;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.9);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -80,8 +83,9 @@ body {
 .chat-header .dot {
   width: 8px;
   height: 8px;
-  background: var(--online);
+  background: #fff;
   border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 
 .messages {
@@ -104,7 +108,7 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--assistant-bubble);
+  background: #ffedd5;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -127,6 +131,7 @@ body {
 .bubble.assistant .content {
   background: var(--assistant-bubble);
   color: var(--text);
+  border: 1px solid #f8d9b6;
   border-radius: 14px 14px 14px 4px;
 }
 
@@ -146,7 +151,7 @@ body {
   height: 1.1em;
   margin-left: 2px;
   vertical-align: text-bottom;
-  background: var(--brand);
+  background: var(--brand-hover);
   animation: blink 1s step-start infinite;
 }
 
@@ -161,12 +166,13 @@ body {
   gap: 10px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 #input {
   flex: 1;
   resize: none;
-  border: 1px solid var(--border);
+  border: 1px solid #f3c898;
   border-radius: 10px;
   padding: 12px 14px;
   font-size: 15px;
@@ -174,11 +180,14 @@ body {
   line-height: 1.5;
   max-height: 120px;
   outline: none;
-  transition: border-color 0.15s;
+  background: #fff8ee;
+  color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 #input:focus {
   border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
 }
 
 #send {
