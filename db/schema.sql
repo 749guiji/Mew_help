@@ -1,3 +1,7 @@
+-- 关键:initdb 默认客户端字符集可能非 utf8mb4,必须先 SET NAMES,
+-- 否则下面 ENUM 里的中文会被存成双重编码 mojibake(Data truncated)。
+SET NAMES utf8mb4;
+
 -- =============================================================
 -- ch03 · Function Calling 工具链 · 建表 DDL
 -- 本章新建:faq / conversations / messages / tickets 四张表
