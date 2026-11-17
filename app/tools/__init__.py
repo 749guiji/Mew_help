@@ -1,4 +1,4 @@
-"""Tool registry for the chapter 3 tool-calling chain."""
+"""Tool registry for the chapter 2 tool-calling chain."""
 
 from app.tools.business import query_logistics, query_order, query_product
 from app.tools.context import current_conversation_id
