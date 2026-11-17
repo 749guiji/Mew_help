@@ -1,6 +1,18 @@
 from app.core.config import Settings
 
-def test_settings_defaults():
+def test_settings_defaults(monkeypatch):
+    # pymilvus 的 load_dotenv() 会把 .env 漏进 os.environ,在非字母序的测试顺序下
+    # 覆盖这里的默认值断言;构造 Settings 前先把被测键从环境中摘掉(hermetic)。
+    for key in (
+        "model",
+        "base_url",
+        "api_key",
+        "temperature",
+        "max_history_tokens",
+        "max_history_messages",
+        "database_url",
+    ):
+        monkeypatch.delenv(key, raising=False)
     s = Settings(_env_file=None)
     assert s.model == "qwen2.5:7b"
     assert s.base_url == "http://localhost:11434/v1"

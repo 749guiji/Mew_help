@@ -43,6 +43,7 @@ _SENTENCE_RE = re.compile(rf"[^{_SENTENCE_END}]+[{_SENTENCE_END}]*")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 _QUESTION_RE = re.compile(r"^\s*(?:Q|问)\s*[:：]\s*(.*)$")
 _ANSWER_RE = re.compile(r"^\s*(?:A|答)\s*[:：]\s*(.*)$")
+_TABLE_SEPARATOR_RE = re.compile(r"^[\s|:—-]+$")
 
 _KEY_CLAUSE_WORDS = ("必须", "不得", "一律", "免责", "责任")
 
@@ -206,6 +207,8 @@ def _split_table(lines: list[str], max_chars: int, heading: str | None) -> list[
 
     for row in lines[1:]:
         row = row.strip()
+        if _TABLE_SEPARATOR_RE.match(row):
+            continue  # Markdown 分隔行(如 |---|---|)不是数据行
         candidate_rows = current_rows + [row]
         candidate = header + "\n" + "\n".join(candidate_rows)
         if current_rows and len(prefix + candidate) > max_chars:

@@ -71,3 +71,26 @@ def test_migrate_faq(session, tmp_path):
     assert migrate_faq(session, store, FakeEmbedder()) == 1
     row = session.query(KnowledgeChunk).filter(KnowledgeChunk.content_type == "faq").one()
     assert row.questions == "退货政策是什么？" and row.vectorize_status == "done"
+
+
+def test_vectorize_pending_batches_over_32(session, tmp_path):
+    # 70 条 pending 会跨 3 个 batch(32/32/6),验证逐批 embed+upsert 全部落地。
+    store = MilvusStore(str(tmp_path / "kv.db"))
+    store.ensure_collection()
+    chunks = [
+        Chunk(
+            category="售后",
+            questions=f"问题{i}",
+            answer=f"答案{i}",
+            section_path=None,
+            content_type="faq",
+            is_key_clause=False,
+        )
+        for i in range(70)
+    ]
+    ids = insert_chunks(session, chunks)
+    n = vectorize_pending(session, store, FakeEmbedder())
+    assert n == 70
+    assert all(session.get(KnowledgeChunk, i).vectorize_status == "done" for i in ids)
+    hits = store.search([0.1] * 1024, top_k=100)
+    assert len(hits) == 70

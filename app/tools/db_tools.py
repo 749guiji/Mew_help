@@ -1,5 +1,6 @@
 """Database-backed tools (FAQ lookup and ticket creation)."""
 
+import logging
 import random
 from datetime import datetime
 
@@ -10,6 +11,8 @@ from app.db.models import Ticket
 from app.kb.retrieval import default_retrieve
 from app.tools.context import current_conversation_id
 
+logger = logging.getLogger(__name__)
+
 
 @tool
 def query_faq(keyword: str) -> str:
@@ -17,7 +20,8 @@ def query_faq(keyword: str) -> str:
     try:
         ans = default_retrieve(keyword)
         return ans if ans else "未查到"
-    except Exception:
+    except Exception as e:
+        logger.warning("query_faq failed: %s", e)
         return "未查到"
 
 

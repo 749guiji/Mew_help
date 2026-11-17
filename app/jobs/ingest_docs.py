@@ -19,6 +19,7 @@ from pathlib import Path
 
 from app.core.config import get_settings
 from app.db import SessionLocal
+from app.db.models import KnowledgeChunk
 from app.kb.embedding import Embedder
 from app.kb.ingest import ingest_document, migrate_faq, vectorize_pending
 from app.kb.milvus_store import MilvusStore
@@ -55,6 +56,11 @@ def main(argv=None) -> int:
         action="store_true",
         help="Only vectorize pending chunks (idempotent rerun; no re-read/re-insert).",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow a full build even when knowledge_chunks already has rows.",
+    )
     args = parser.parse_args(argv)
 
     session, store, embedder, settings = _build_session_store_embedder()
@@ -63,6 +69,14 @@ def main(argv=None) -> int:
             n = vectorize_pending(session, store, embedder)
             print(f"reconcile: vectorized {n} pending chunks")
             return 0
+
+        existing = session.query(KnowledgeChunk).count()
+        if existing > 0 and not args.force:
+            print(
+                f"已有 {existing} 块,全量 build 会重复;"
+                "用 --reconcile 增量,或 --force 强制重建"
+            )
+            return 1
 
         total = 0
         for path in sorted(_KNOWLEDGE_DIR.glob("*.md")):

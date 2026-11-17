@@ -9,6 +9,8 @@ is always the authoritative text, not a copy cached in the vector store.
 
 from __future__ import annotations
 
+import functools
+
 from app.core.config import get_settings
 from app.db import SessionLocal
 from app.db.models import KnowledgeChunk
@@ -45,12 +47,13 @@ def retrieve(
     return chunk.answer if chunk else None
 
 
-def default_retrieve(query: str) -> str | None:
-    """Integration entry point: build real store/embedder/session from settings.
+@functools.lru_cache(maxsize=1)
+def _get_store() -> MilvusStore:
+    """Build (and cache) the configured Milvus store for the process lifetime.
 
-    Used by the chat tool path (``query_faq``) and Task 8 wiring. The collection
-    is ensured before searching so a fresh data dir still degrades gracefully to
-    ``None`` instead of raising.
+    ``MilvusClient`` holds an open handle per instance and Milvus Lite is
+    single-process per data dir, so constructing a fresh client per query
+    accumulates handles and can trip the lock; cache one shared instance.
     """
     settings = get_settings()
     store = MilvusStore(
@@ -59,7 +62,20 @@ def default_retrieve(query: str) -> str | None:
         dim=settings.embedding_dim,
     )
     store.ensure_collection()
-    embedder = Embedder()
+    return store
+
+
+def default_retrieve(query: str) -> str | None:
+    """Integration entry point: build real store/embedder/session from settings.
+
+    Used by the chat tool path (``query_faq``) and Task 8 wiring. The store is
+    cached process-wide (see :func:`_get_store`); the collection is ensured at
+    build time so a fresh data dir still degrades gracefully to ``None`` instead
+    of raising.
+    """
+    settings = get_settings()
+    store = _get_store()
+    embedder = Embedder(dim=settings.embedding_dim)
 
     with SessionLocal() as session:
         return retrieve(

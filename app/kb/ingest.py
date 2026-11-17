@@ -13,6 +13,9 @@ from __future__ import annotations
 from app.db.models import Faq, KnowledgeChunk
 from app.kb.chunker import Chunk, chunk_markdown
 
+# 逐批向量化:一批 embed + upsert 后即 commit,中断后重跑只需补齐剩余批。
+_BATCH_SIZE = 32
+
 
 def _to_row(chunk: Chunk) -> KnowledgeChunk:
     return KnowledgeChunk(
@@ -56,7 +59,9 @@ def vectorize_pending(session, store, embedder) -> int:
     """Embed + upsert every ``pending`` row, then backfill ``done``.
 
     Returns the number of rows vectorized. Rows already ``done`` are skipped, so
-    calling this again is a no-op (idempotent reconcile).
+    calling this again is a no-op (idempotent reconcile). Pending rows are
+    processed in fixed-size batches (embed -> upsert -> backfill -> commit) so an
+    interrupt resumes cheaply instead of re-embedding the whole backlog.
     """
     pending = (
         session.query(KnowledgeChunk)
@@ -67,20 +72,25 @@ def vectorize_pending(session, store, embedder) -> int:
     if not pending:
         return 0
 
-    texts = [_vectorize_text(row) for row in pending]
-    vectors = embedder.embed_texts(texts)
-    for vector in vectors:
-        assert len(vector) == embedder.dim, (
-            f"embedding dimension mismatch: expected {embedder.dim}, got {len(vector)}"
-        )
+    total = 0
+    for start in range(0, len(pending), _BATCH_SIZE):
+        batch = pending[start : start + _BATCH_SIZE]
+        texts = [_vectorize_text(row) for row in batch]
+        vectors = embedder.embed_texts(texts)
+        for vector in vectors:
+            assert len(vector) == embedder.dim, (
+                f"embedding dimension mismatch: expected {embedder.dim}, got {len(vector)}"
+            )
 
-    store.upsert([(row.id, vector) for row, vector in zip(pending, vectors)])
+        store.upsert([(row.id, vector) for row, vector in zip(batch, vectors)])
 
-    for row in pending:
-        row.vectorize_status = "done"
-        row.vector_id = str(row.id)
-    session.commit()
-    return len(pending)
+        for row in batch:
+            row.vectorize_status = "done"
+            row.vector_id = str(row.id)
+        session.commit()
+        total += len(batch)
+
+    return total
 
 
 def ingest_document(
@@ -92,7 +102,7 @@ def ingest_document(
     *,
     max_chars,
     overlap,
-    source: str | None = None,
+    source: str | None = None,  # 预留:未来做来源溯源,当前无对应列
 ) -> list[int]:
     """Chunk ``text``, insert it, then vectorize all pending rows."""
     chunks = chunk_markdown(text, content_type, max_chars=max_chars, overlap=overlap)

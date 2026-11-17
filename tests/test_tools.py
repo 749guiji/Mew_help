@@ -61,7 +61,7 @@ def test_query_faq_no_match(monkeypatch):
 def test_query_faq_match(monkeypatch):
     monkeypatch.setattr(db_tools, "default_retrieve", lambda q: "7 天无理由退货")
     out = TOOL_REGISTRY["query_faq"].invoke({"keyword": "退货"})
-    assert "退货" in out
+    assert out == "7 天无理由退货"
 
 
 def test_create_ticket(sqlite_session_local):

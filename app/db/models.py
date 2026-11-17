@@ -109,6 +109,7 @@ class KnowledgeChunk(Base):
         Enum("pending", "done", native_enum=False),
         nullable=False,
         server_default="pending",
+        index=True,
     )
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(
