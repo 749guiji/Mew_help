@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     milvus_uri: str = "./data/milvus.db"
     milvus_collection: str = "knowledge"
     embedding_model: str = "bge-m3"
+    embedding_base_url: str = "http://localhost:11434"
     embedding_dim: int = 1024
     retrieval_top_k: int = 1
     retrieval_threshold: float = 0.5

@@ -1,8 +1,8 @@
-"""Embedding client: thin wrapper around ``OpenAIEmbeddings`` pointed at Ollama BGE-M3."""
+"""Embedding client: thin wrapper around ``OllamaEmbeddings`` pointed at BGE-M3."""
 
 from __future__ import annotations
 
-from langchain_openai import OpenAIEmbeddings
+from langchain_ollama import OllamaEmbeddings
 
 from app.core.config import get_settings
 
@@ -10,20 +10,19 @@ from app.core.config import get_settings
 class Embedder:
     """Turn texts into fixed-width embeddings via an ``embed_documents`` backend.
 
-    The default backend is ``OpenAIEmbeddings`` configured from ``Settings``
-    (``embedding_model`` / ``base_url`` / ``api_key``), i.e. Ollama's BGE-M3
-    behind its OpenAI-compatible ``/v1`` endpoint. ``embed_texts`` returns one
-    vector per input text and guards against dimension drift so downstream
-    vector-store writes never silently store the wrong width.
+    The default backend is ``OllamaEmbeddings`` configured from ``Settings``
+    (``embedding_model`` / ``embedding_base_url``), i.e. Ollama's BGE-M3 behind
+    its native ``/api/embed`` endpoint. ``embed_texts`` returns one vector per
+    input text and guards against dimension drift so downstream vector-store
+    writes never silently store the wrong width.
     """
 
     def __init__(self, underlying=None, dim: int = 1024):
         if underlying is None:
             settings = get_settings()
-            underlying = OpenAIEmbeddings(
+            underlying = OllamaEmbeddings(
                 model=settings.embedding_model,
-                base_url=settings.base_url,
-                api_key=settings.api_key,
+                base_url=settings.embedding_base_url,
             )
         self._underlying = underlying
         self.dim = dim
