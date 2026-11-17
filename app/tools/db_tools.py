@@ -6,16 +6,19 @@ from datetime import datetime
 from langchain_core.tools import tool
 
 from app.db import SessionLocal
-from app.db.models import Faq, Ticket
+from app.db.models import Ticket
+from app.kb.retrieval import default_retrieve
 from app.tools.context import current_conversation_id
 
 
 @tool
 def query_faq(keyword: str) -> str:
     """查询售后政策、运费/邮费标准、退换货规则等常见问题(FAQ)的答案。当用户询问政策、规定、费用标准、规则等知识类问题时使用。"""
-    with SessionLocal() as s:
-        faq = s.query(Faq).filter(Faq.question.like(f"%{keyword}%")).first()
-        return faq.answer if faq else "未查到"
+    try:
+        ans = default_retrieve(keyword)
+        return ans if ans else "未查到"
+    except Exception:
+        return "未查到"
 
 
 @tool

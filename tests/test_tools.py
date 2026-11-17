@@ -52,12 +52,14 @@ def test_query_logistics_returns_str():
     assert isinstance(out, str) and "1002" in out
 
 
-def test_query_faq_no_match(sqlite_session_local):
+def test_query_faq_no_match(monkeypatch):
+    monkeypatch.setattr(db_tools, "default_retrieve", lambda q: None)
     out = TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费"})
     assert "未查到" in out
 
 
-def test_query_faq_match(sqlite_session_local):
+def test_query_faq_match(monkeypatch):
+    monkeypatch.setattr(db_tools, "default_retrieve", lambda q: "7 天无理由退货")
     out = TOOL_REGISTRY["query_faq"].invoke({"keyword": "退货"})
     assert "退货" in out
 
