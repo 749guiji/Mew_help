@@ -32,6 +32,15 @@ def test_dedupe_by_normalized_question():
     assert dedupe(qas) == [QA("邮费多少？", "a"), QA("退货？", "b")]
 
 
+def test_dedupe_removes_internal_punctuation():
+    from app.kb.qa_extract import normalize
+
+    assert normalize("请问，运费怎么收") == normalize("请问运费怎么收")
+    assert dedupe([QA("运费，怎么收", "a"), QA("运费怎么收", "b")]) == [
+        QA("运费，怎么收", "a")
+    ]
+
+
 def test_mine_conversations_end_to_end(session, tmp_path):
     src = tmp_path / "conv.jsonl"
     src.write_text('{"text": "用户:运费怎么收 客服:满99包邮"}\n', encoding="utf-8")

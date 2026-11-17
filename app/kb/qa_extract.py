@@ -42,7 +42,7 @@ class QA:
     answer: str
 
 
-_PUNCT_EDGE_RE = re.compile(r"^[\W_]+|[\W_]+$")
+_PUNCT_RE = re.compile(r"[^\w\s]+")
 
 
 def build_qa_extraction_chain(llm) -> Runnable:
@@ -60,8 +60,8 @@ def extract_qa(chain, text: str) -> list[QA]:
 
 
 def normalize(q: str) -> str:
-    """Dedupe key: strip whitespace, lowercase, strip leading/trailing punctuation."""
-    return _PUNCT_EDGE_RE.sub("", q.strip().lower())
+    """Dedupe key: strip whitespace, lowercase, remove all punctuation."""
+    return _PUNCT_RE.sub("", q.strip().lower())
 
 
 def dedupe(qas: list[QA]) -> list[QA]:
