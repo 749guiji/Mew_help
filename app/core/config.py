@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     max_history_tokens: int = 4000
     max_history_messages: int = 10
     database_url: str = "mysql+pymysql://root:123456@127.0.0.1:3306/mew_help"
+    milvus_uri: str = "./data/milvus.db"
+    milvus_collection: str = "knowledge"
+    embedding_model: str = "bge-m3"
+    embedding_dim: int = 1024
+    retrieval_top_k: int = 1
+    retrieval_threshold: float = 0.5
+    chunk_max_chars: int = 800
+    chunk_overlap_chars: int = 100
 
 
 @lru_cache

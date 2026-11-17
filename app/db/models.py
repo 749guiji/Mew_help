@@ -82,3 +82,52 @@ class Ticket(Base):
         server_default="待处理",
     )
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    category = Column(String(255), nullable=False, index=True)
+    questions = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    section_path = Column(String(512), nullable=True)
+    content_type = Column(String(32), nullable=True)
+    is_key_clause = Column(Integer, nullable=False, server_default="0")
+    prev_chunk_id = Column(
+        BIGINT_UNSIGNED,
+        ForeignKey("knowledge_chunks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    next_chunk_id = Column(
+        BIGINT_UNSIGNED,
+        ForeignKey("knowledge_chunks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    vector_id = Column(String(64), nullable=True)
+    vectorize_status = Column(
+        Enum("pending", "done", native_enum=False),
+        nullable=False,
+        server_default="pending",
+    )
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class QaExtractionStaging(Base):
+    __tablename__ = "qa_extraction_staging"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    batch_no = Column(String(64), nullable=False, index=True)
+    source_ref = Column(String(255), nullable=True)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    status = Column(
+        Enum("extracted", "kept", "discarded", native_enum=False),
+        nullable=False,
+        server_default="extracted",
+        index=True,
+    )
+    created_at = Column(DateTime, nullable=False, server_default=func.now())

@@ -29,3 +29,7 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+
+# Milvus Lite / SQLite local data
+data/
+*.db
