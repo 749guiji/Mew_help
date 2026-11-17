@@ -6,13 +6,15 @@
 
 **Architecture:** 离线两条管道(文档切分、对话挖 QA)各自产出 `knowledge_chunks` 行(`vectorize_status='pending'`),共用「embed → Milvus upsert → 回填 done」的双写出口;在线 `query_faq` 改为 embed(问题)→ Milvus Top-K → 回 MySQL 取 answer。Milvus 只存 `id`(int64 主键 = MySQL id)+ `vector`(float, dim 1024, COSINE),原文权威源在 MySQL。
 
-**Tech Stack:** Python 3.14 / FastAPI / LangChain(langchain-openai, 复用 OpenAIEmbeddings 指向 Ollama)/ BGE-M3(1024 维)/ pymilvus + milvus-lite(嵌入式)/ SQLAlchemy + pymysql(MySQL)。
+**Tech Stack:** Python 3.14 / FastAPI / LangChain(langchain-ollama 的 OllamaEmbeddings 指向本地 Ollama bge-m3)/ BGE-M3(1024 维)/ pymilvus + milvus-lite(嵌入式)/ SQLAlchemy + pymysql(MySQL)。
+
+> 注:嵌入后端实测后由 `OpenAIEmbeddings`(`/v1/embeddings` 报 400)切换到 `langchain-ollama` 的 `OllamaEmbeddings`(原生 `/api/embed`),详见 dev-notes ch03 阶段三。
 
 **Spec:** `docs/superpowers/specs/2026-11-17-ch03-rag-knowledge-base-design.md`
 
 ## Global Constraints
 
-- 嵌入:BGE-M3,维度 **1024**,经 Ollama `base_url=http://localhost:11434/v1`、`api_key="ollama"`、`model="bge-m3"`,复用已装的 `langchain-openai` 的 `OpenAIEmbeddings`(不新增嵌入依赖)。
+- 嵌入:BGE-M3,维度 **1024**,经 `langchain-ollama` 的 `OllamaEmbeddings`(`model="bge-m3"`、`base_url=embedding_base_url`,默认 `http://localhost:11434` 无 `/v1`)。
 - 向量库:**Milvus Lite 3.x**(纯 Python,Windows 可跑;2.x 不支持 Windows)。Windows 上 pip 会跳过 pymilvus 的 `milvus-lite` extra,**必须显式 `pip install milvus-lite`**;`requirements.txt` 里 `pymilvus` 与 `milvus-lite` 分开各写一行。`MilvusClient("./data/milvus.db")` 生成目录,`.gitignore` 掉。
 - Milvus 集合 `knowledge`:只存 `id`(int64 主键,**= MySQL `knowledge_chunks.id`**)+ `vector`(FLOAT_VECTOR 1024);`metric_type="COSINE"`,`auto_id=False`。
 - 向量化文本 = `category + "\n" + questions + "\n" + answer`(三者拼一段)。
@@ -184,7 +186,7 @@ git commit -m "feat: structure-aware markdown chunker (ch03)"
 - Consumes: `Settings`(Task 1)。
 - Produces:
   - `class Embedder`: `__init__(self, underlying=None, dim: int = 1024)`;`embed_texts(self, texts: list[str]) -> list[list[float]]`。
-  - 默认 `underlying = OpenAIEmbeddings(model=settings.embedding_model, base_url=settings.base_url, api_key=settings.api_key)`(来自 `langchain_openai`);`embed_texts` 调 `underlying.embed_documents(texts)` 并 `assert len(v) == self.dim`。
+  - 默认 `underlying = OllamaEmbeddings(model=settings.embedding_model, base_url=settings.embedding_base_url)`(来自 `langchain_ollama`);`embed_texts` 调 `underlying.embed_documents(texts)` 并 `assert len(v) == self.dim`。
 
 - [ ] **Step 1: 写失败测试 `tests/test_embedding.py`**
 
