@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 
 class MilvusStore:
     """Embedding vector storage backed by Milvus Lite (embedded, local file).
@@ -20,16 +22,26 @@ class MilvusStore:
         # out of module import.
         from pymilvus import MilvusClient
 
+        # Milvus Lite does not create the parent directory of a local path;
+        # create it so a fresh data dir works out of the box. Remote URIs are
+        # left alone.
+        if "://" not in uri:
+            Path(uri).parent.mkdir(parents=True, exist_ok=True)
+
         self.uri = uri
         self.collection = collection
         self.dim = dim
         self.client = MilvusClient(uri)
 
     def ensure_collection(self) -> None:
-        """Create the collection if it does not exist (idempotent)."""
+        """Create the collection if it does not exist, and load it (idempotent)."""
         from pymilvus import DataType
 
         if self.client.has_collection(self.collection):
+            # Re-opening a persisted collection (e.g. a fresh process) finds it
+            # in "released" state; load it so search works. Fresh collections
+            # are searchable after upsert without an explicit load.
+            self.client.load_collection(self.collection)
             return
 
         schema = self.client.create_schema(auto_id=False)
@@ -39,7 +51,10 @@ class MilvusStore:
         index_params = self.client.prepare_index_params()
         index_params.add_index(
             field_name="vector",
-            index_type="AUTOINDEX",
+            # FLAT (brute force, no index file) avoids Milvus Lite's faiss
+            # AUTOINDEX on Windows failing to write the .idx under a missing
+            # indexes/ dir. Exact + fine at this chapter's corpus size.
+            index_type="FLAT",
             metric_type="COSINE",
         )
 
@@ -53,6 +68,10 @@ class MilvusStore:
         """Insert or overwrite rows keyed by primary key (idempotent by id)."""
         data = [{"id": i, "vector": v} for i, v in rows]
         self.client.upsert(self.collection, data)
+        # Flush so the data is durable and the index is built before another
+        # process re-opens the collection (otherwise search fails to write the
+        # autoindex under a missing indexes/ dir).
+        self.client.flush(self.collection)
 
     def search(self, vector: list[float], top_k: int = 1) -> list[tuple[int, float]]:
         """Return up to ``top_k`` ``(id, cosine_similarity)`` hits, best first."""

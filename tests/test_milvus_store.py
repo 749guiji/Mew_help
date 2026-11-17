@@ -16,3 +16,11 @@ def test_search_empty_collection(tmp_path):
     store = MilvusStore(str(tmp_path / "empty.db"), dim=2)
     store.ensure_collection()
     assert store.search([1.0, 0.0], top_k=1) == []   # Review Focus #4
+
+
+def test_init_creates_parent_dir(tmp_path):
+    # A fresh nested data dir must be created, not raise ConnectionConfigException.
+    store = MilvusStore(str(tmp_path / "nested" / "sub" / "kv.db"), dim=2)
+    store.ensure_collection()
+    store.upsert([(1, [1.0, 0.0])])
+    assert store.search([1.0, 0.0], top_k=1)[0][0] == 1
