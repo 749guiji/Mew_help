@@ -15,15 +15,17 @@ pipeline. The rules implemented here follow the ch03 spec (design decisions
   pairs. Convention (decided here, per SDD ruling R5): a line ``Q: ...`` or
   ``问: ...`` starts a question, the following ``A: ...`` / ``答: ...`` lines
   (which may span several lines) form its answer. ``questions`` gets the real
-  question text, ``answer`` gets the answer text. An FAQ section whose body
-  contains no ``Q:``/``A:`` marker yields no chunks.
+  question text, ``answer`` gets the answer text. Long answers are split with
+  the same ``max_chars``/``overlap`` rules (each piece keeps the same question).
+  An FAQ section whose body contains no ``Q:``/``A:`` marker yields no chunks.
 - For ``content_type in ("policy", "manual")`` ``questions`` gets the current
   section title (``""`` when there is no heading) and ``answer`` gets the body.
 - A section body shorter than or equal to ``max_chars`` is emitted as one chunk;
-  longer bodies are split recursively (sentences, keeping the terminating
-  ``。！？.!?``) and packed greedily with ``overlap`` characters of overlap whose
-  boundary is cut back to the nearest sentence end. Text with no sentence
-  punctuation is hard-split by width so it always terminates.
+  longer bodies are split recursively: paragraphs (``\\n\\n``) first, then
+  sentences (keeping the terminating ``。！？.!?``) inside a paragraph that still
+  exceeds ``max_chars``, then packed greedily with ``overlap`` characters of
+  overlap whose boundary is cut back to the nearest sentence end. Text with no
+  sentence punctuation is hard-split by width so it always terminates.
 - Markdown pipe tables (consecutive lines starting with ``|``, with a header row
   plus at least one data row) are split row-by-row; every chunk re-includes the
   header row and is prefixed with the nearest heading above the table.
@@ -100,31 +102,31 @@ def _overlap_tail(text: str, overlap: int) -> str:
     return tail
 
 
-def _pack_sentences(sentences: list[str], max_chars: int, overlap: int) -> list[str]:
-    """Greedily pack sentence units into chunks of at most ``max_chars``."""
+def _split_paragraphs(text: str) -> list[str]:
+    """Split text on blank lines (``\\n\\n``) into stripped, non-empty paragraphs."""
+    return [p.strip() for p in text.split("\n\n") if p.strip()]
+
+
+def _pack_units(units: list[tuple[str, bool]], max_chars: int, overlap: int) -> list[str]:
+    """Greedily pack paragraph/sentence units into chunks of at most ``max_chars``.
+
+    ``units`` are ``(text, starts_new_paragraph)`` pairs; ``starts_new_paragraph``
+    decides whether a ``\\n\\n`` separator is inserted before the unit so that
+    paragraph boundaries survive inside a chunk.
+    """
     chunks: list[str] = []
     current = ""
 
-    for unit in sentences:
-        unit = unit.strip()
-        if not unit:
-            continue
-        if len(unit) > max_chars:
-            # Oversized unit: flush what we have, then split it on its own.
-            if current:
-                chunks.append(current)
-                current = ""
-            chunks.extend(_hard_split(unit, max_chars, overlap))
-            continue
-
+    for text, starts_new_paragraph in units:
+        sep = "\n\n" if (starts_new_paragraph and current) else ""
         if not current:
-            current = unit
-        elif len(current) + len(unit) <= max_chars:
-            current += unit
+            current = text
+        elif len(current) + len(sep) + len(text) <= max_chars:
+            current += sep + text
         else:
             chunks.append(current)
             tail = _overlap_tail(current, overlap)
-            current = unit if not tail or len(tail) + len(unit) > max_chars else tail + unit
+            current = text if not tail or len(tail) + len(text) > max_chars else tail + text
 
     if current:
         chunks.append(current)
@@ -137,7 +139,23 @@ def _split_long_text(text: str, max_chars: int, overlap: int) -> list[str]:
         return []
     if len(text) <= max_chars:
         return [text]
-    return _pack_sentences(_split_sentences(text), max_chars, overlap)
+
+    # Spec: split by paragraph (``\n\n``) first; only fall back to sentence
+    # packing inside a paragraph that still exceeds ``max_chars``. Text with no
+    # sentence punctuation is hard-split by width so it always terminates.
+    units: list[tuple[str, bool]] = []
+    for paragraph in _split_paragraphs(text):
+        if len(paragraph) <= max_chars:
+            units.append((paragraph, True))
+        else:
+            for idx, sentence in enumerate(_split_sentences(paragraph)):
+                if len(sentence) > max_chars:
+                    for sub_idx, sub in enumerate(_hard_split(sentence, max_chars, overlap)):
+                        units.append((sub, idx == 0 and sub_idx == 0))
+                else:
+                    units.append((sentence, idx == 0))
+
+    return _pack_units(units, max_chars, overlap)
 
 
 def _parse_qa(text: str) -> list[tuple[str, str]]:
@@ -270,16 +288,17 @@ def chunk_markdown(
 
         if content_type == "faq":
             for question, answer in _parse_qa(body):
-                chunks.append(
-                    Chunk(
-                        category=category,
-                        questions=question,
-                        answer=answer,
-                        section_path=section_path,
-                        content_type=content_type,
-                        is_key_clause=_is_key_clause(answer),
+                for piece in _split_long_text(answer, max_chars, overlap):
+                    chunks.append(
+                        Chunk(
+                            category=category,
+                            questions=question,
+                            answer=piece,
+                            section_path=section_path,
+                            content_type=content_type,
+                            is_key_clause=_is_key_clause(piece),
+                        )
                     )
-                )
             return
 
         questions = title or ""

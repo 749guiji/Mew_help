@@ -41,3 +41,23 @@ def test_no_heading_and_empty_section():
     assert chunk_markdown("", "policy") == []  # 空输入不产块
     chunks = chunk_markdown("没有标题的正文。", "policy")
     assert chunks and chunks[0].category == "未分类"  # 无标题用 fallback
+
+
+def test_faq_long_answer_is_split():
+    long_answer = "支持。" * 500  # 1500 字,远超 max_chars
+    md = f"# 商品FAQ\n\nQ: 支持吗?\nA: {long_answer}\n"
+    chunks = chunk_markdown(md, "faq", max_chars=200, overlap=50)
+    assert len(chunks) > 1
+    assert all(c.questions == "支持吗?" for c in chunks)  # 每个分块保留同一问法
+    assert all(len(c.answer) <= 200 for c in chunks)
+    assert all(c.answer.endswith(("。", "!", "?", "！", "？")) for c in chunks)
+
+
+def test_paragraph_split_prefers_paragraph_boundaries():
+    p1 = "第一段。" * 30
+    p2 = "第二段。" * 30
+    md = f"# 手册\n\n{p1}\n\n{p2}"
+    chunks = chunk_markdown(md, "manual", max_chars=200)
+    assert len(chunks) == 2  # 段落优先:不跨段落、不句中切
+    assert chunks[0].answer == p1
+    assert chunks[1].answer == p2
