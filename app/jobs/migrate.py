@@ -19,6 +19,11 @@ from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
 
 from app.db import Base, engine
+# Import the ORM models so they register on ``Base.metadata`` before
+# ``create_all`` inspects it. ``app.db`` itself never imports models, so a
+# standalone ``python -m app.jobs.migrate`` would otherwise see an empty
+# metadata and create nothing.
+from app.db import models  # noqa: F401
 
 
 def ensure_tables(target_engine: Engine = engine) -> list[str]:
