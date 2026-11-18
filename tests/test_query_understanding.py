@@ -46,6 +46,16 @@ def test_rewrite_query_returns_model_and_uses_function_calling():
     assert llm.called_method == "function_calling"
 
 
+def test_rewrite_query_falls_back_when_chain_returns_none():
+    llm = FakeLLM(None)
+
+    out = rewrite_query(llm, "运费怎么算")
+
+    assert isinstance(out, QueryUnderstanding)
+    assert out.standard_question == "运费怎么算"
+    assert out.category is None
+
+
 def test_expand_synonyms_keeps_original_and_appends():
     out = expand_synonyms("退款")
     assert "退款" in out

@@ -42,7 +42,13 @@ def rewrite_query(llm, question: str) -> QueryUnderstanding:
     chain = ChatPromptTemplate.from_messages(
         [("system", QUERY_REWRITE_SYSTEM_PROMPT), ("human", "{input}")]
     ) | llm.with_structured_output(QueryUnderstanding, method="function_calling")
-    return chain.invoke({"input": question})
+    result = chain.invoke({"input": question})
+    if isinstance(result, QueryUnderstanding):
+        return result
+    # Ollama FC can fail to emit a tool_call (e.g. qwen3:8b), yielding None.
+    # Never return None: fall back to the original question so retrieval still
+    # proceeds with a usable query instead of raising on `.standard_question`.
+    return QueryUnderstanding(standard_question=question, category=None)
 
 
 def expand_synonyms(text: str) -> str:
