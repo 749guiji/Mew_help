@@ -96,3 +96,45 @@ CREATE TABLE qa_extraction_staging (
   KEY idx_batch_no (batch_no),
   KEY idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='历史对话抽 QA 的离线中转暂存表:分批抽取、整体去重,保留项入 knowledge_chunks,建库完成可清空';
+
+-- =============================================================
+-- ch04 · 混合检索 + 重排 · 建表 DDL
+-- 本章新建:low_confidence_questions / faith_cases 两张表
+-- DDL 取自设计文档附录 A(用户需求原文),逐字保留
+-- =============================================================
+SET NAMES utf8mb4;
+
+CREATE TABLE low_confidence_questions (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  conversation_id BIGINT UNSIGNED NULL                    COMMENT '来源会话',
+  raw_question    TEXT            NOT NULL                COMMENT '用户原话,带情绪口语',
+  source          ENUM('retrieval_low_conf','self_check','user_feedback') NOT NULL COMMENT '入池入口',
+  reason          TEXT            NULL                    COMMENT '判不能的原因,留作复盘',
+  created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '入池时间',
+  PRIMARY KEY (id),
+  KEY idx_source (source),
+  KEY idx_created_at (created_at),
+  CONSTRAINT fk_lcq_conversation FOREIGN KEY (conversation_id) REFERENCES conversations (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='低置信度问题池';
+
+CREATE TABLE faith_cases (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  eval_id       VARCHAR(16)     NOT NULL                COMMENT '评估集题号,如 A43;一题一行',
+  bucket        VARCHAR(24)     NOT NULL                COMMENT '题目所属桶:A_policy / B_model / C_colloquial / E_multi',
+  query         VARCHAR(512)    NOT NULL                COMMENT '用户问题原文',
+  strategy      VARCHAR(24)     NOT NULL DEFAULT 'hybrid_rerank' COMMENT '产出这条答案的检索策略',
+  answer        TEXT            NOT NULL                COMMENT '被判编造的那版生成答案原文',
+  reason        TEXT            NOT NULL                COMMENT '裁判给的理由:编在哪一句',
+  citations     JSON            NULL                    COMMENT '这一轮喂给模型的 Top-K 证据全集快照',
+  judge_model   VARCHAR(64)     NULL                    COMMENT '判这条的裁判模型',
+  status        ENUM('未解决','已解决','无需解决') NOT NULL DEFAULT '未解决' COMMENT '处置状态',
+  seen_count    INT UNSIGNED    NOT NULL DEFAULT 1      COMMENT '被判编造的累计次数(跨轮)',
+  first_seen_at DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '第一次被判编造的时间',
+  last_seen_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '最近一次被判编造的时间',
+  resolution    VARCHAR(300)    NULL                    COMMENT '处置说明',
+  resolved_at   DATETIME        NULL                    COMMENT '最近一次被标为已解决/无需解决的时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_eval_id (eval_id),
+  KEY idx_status (status),
+  KEY idx_last_seen_at (last_seen_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ch04 忠实度编造个案台账';

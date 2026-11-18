@@ -132,3 +132,51 @@ class QaExtractionStaging(Base):
         index=True,
     )
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class LowConfidenceQuestion(Base):
+    __tablename__ = "low_confidence_questions"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    conversation_id = Column(
+        BIGINT_UNSIGNED, ForeignKey("conversations.id"), nullable=True
+    )
+    raw_question = Column(Text, nullable=False)
+    source = Column(
+        Enum("retrieval_low_conf", "self_check", "user_feedback", native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+
+
+class FaithCase(Base):
+    __tablename__ = "faith_cases"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    eval_id = Column(String(16), nullable=False, unique=True)
+    bucket = Column(String(24), nullable=False)
+    query = Column(String(512), nullable=False)
+    strategy = Column(String(24), nullable=False, server_default="hybrid_rerank")
+    answer = Column(Text, nullable=False)
+    reason = Column(Text, nullable=False)
+    citations = Column(JSON, nullable=True)
+    judge_model = Column(String(64), nullable=True)
+    status = Column(
+        Enum("未解决", "已解决", "无需解决", native_enum=False),
+        nullable=False,
+        server_default="未解决",
+        index=True,
+    )
+    seen_count = Column(
+        Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+        nullable=False,
+        server_default="1",
+    )
+    first_seen_at = Column(DateTime, nullable=False, server_default=func.now())
+    last_seen_at = Column(
+        DateTime, nullable=False, server_default=func.now(), index=True
+    )
+    resolution = Column(String(300), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
