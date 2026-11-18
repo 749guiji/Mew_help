@@ -1,0 +1,50 @@
+{"id": "A01", "bucket": "A_policy", "query": "七天无理由退货的条件是什么？", "ground_truth_chunk_ids": [28], "difficulty": "easy"}
+{"id": "A02", "bucket": "A_policy", "query": "退货流程怎么走？", "ground_truth_chunk_ids": [31], "difficulty": "easy"}
+{"id": "A03", "bucket": "A_policy", "query": "运费怎么算？", "ground_truth_chunk_ids": [29], "difficulty": "easy"}
+{"id": "A04", "bucket": "A_policy", "query": "退款什么时候到账？", "ground_truth_chunk_ids": [17], "difficulty": "easy"}
+{"id": "A05", "bucket": "A_policy", "query": "质量问题退货的运费谁出？", "ground_truth_chunk_ids": [30], "difficulty": "medium"}
+{"id": "A06", "bucket": "A_policy", "query": "满多少钱可以包邮？", "ground_truth_chunk_ids": [29], "difficulty": "medium"}
+{"id": "A07", "bucket": "A_policy", "query": "换货有什么要求？", "ground_truth_chunk_ids": [18], "difficulty": "medium"}
+{"id": "A08", "bucket": "A_policy", "query": "电子发票什么时候开具？", "ground_truth_chunk_ids": [19], "difficulty": "medium"}
+{"id": "A09", "bucket": "A_policy", "query": "偏远地区运费要额外加钱吗？", "ground_truth_chunk_ids": [29], "difficulty": "medium"}
+{"id": "A10", "bucket": "A_policy", "query": "商品有问题可以换货吗？", "ground_truth_chunk_ids": [18], "difficulty": "medium"}
+{"id": "A11", "bucket": "A_policy", "query": "退货有时间限制吗？", "ground_truth_chunk_ids": [28], "difficulty": "medium"}
+{"id": "A12", "bucket": "A_policy", "query": "质量问题退货运费谁承担？", "ground_truth_chunk_ids": [30], "difficulty": "medium"}
+{"id": "A13", "bucket": "A_policy", "query": "怎么申请售后？", "ground_truth_chunk_ids": [31], "difficulty": "hard"}
+{"id": "A14", "bucket": "A_policy", "query": "签收之后几天内可以无理由退货？", "ground_truth_chunk_ids": [28], "difficulty": "hard"}
+{"id": "B01", "bucket": "B_model", "query": "SKU-1001 手机壳多少钱？", "ground_truth_chunk_ids": [20], "difficulty": "easy"}
+{"id": "B02", "bucket": "B_model", "query": "SKU-1002 无线充电器有现货吗？", "ground_truth_chunk_ids": [21], "difficulty": "easy"}
+{"id": "B03", "bucket": "B_model", "query": "SKU-1004 移动电源的容量是多少？", "ground_truth_chunk_ids": [23], "difficulty": "easy"}
+{"id": "B04", "bucket": "B_model", "query": "SKU-1001 现在有库存吗？", "ground_truth_chunk_ids": [20], "difficulty": "easy"}
+{"id": "B05", "bucket": "B_model", "query": "SKU-1003 蓝牙耳机续航多久？", "ground_truth_chunk_ids": [22], "difficulty": "medium"}
+{"id": "B06", "bucket": "B_model", "query": "SKU-1001 支持什么机型？", "ground_truth_chunk_ids": [20], "difficulty": "medium"}
+{"id": "B07", "bucket": "B_model", "query": "SKU-1002 支持什么充电协议？", "ground_truth_chunk_ids": [21], "difficulty": "medium"}
+{"id": "B08", "bucket": "B_model", "query": "SKU-1004 充电功率多大？", "ground_truth_chunk_ids": [23], "difficulty": "medium"}
+{"id": "B09", "bucket": "B_model", "query": "SKU-1002 多少钱？", "ground_truth_chunk_ids": [21], "difficulty": "medium"}
+{"id": "B10", "bucket": "B_model", "query": "SKU-1003 是现货还是预售？", "ground_truth_chunk_ids": [22], "difficulty": "hard"}
+{"id": "B11", "bucket": "B_model", "query": "SKU-1003 配合充电仓能用多久？", "ground_truth_chunk_ids": [22], "difficulty": "hard"}
+{"id": "B12", "bucket": "B_model", "query": "SKU-1004 有现货吗？", "ground_truth_chunk_ids": [23], "difficulty": "hard"}
+{"id": "C01", "bucket": "C_colloquial", "query": "这东西能退不？", "ground_truth_chunk_ids": [28], "difficulty": "easy"}
+{"id": "C02", "bucket": "C_colloquial", "query": "运费多少钱？", "ground_truth_chunk_ids": [29], "difficulty": "easy"}
+{"id": "C03", "bucket": "C_colloquial", "query": "多久能发货？", "ground_truth_chunk_ids": [25], "difficulty": "easy"}
+{"id": "C04", "bucket": "C_colloquial", "query": "7 天之内都能退吗？", "ground_truth_chunk_ids": [28], "difficulty": "easy"}
+{"id": "C05", "bucket": "C_colloquial", "query": "几天能收到退款啊？", "ground_truth_chunk_ids": [17], "difficulty": "medium"}
+{"id": "C06", "bucket": "C_colloquial", "query": "能开发票吗？", "ground_truth_chunk_ids": [26], "difficulty": "medium"}
+{"id": "C07", "bucket": "C_colloquial", "query": "包邮吗？", "ground_truth_chunk_ids": [29], "difficulty": "medium"}
+{"id": "C08", "bucket": "C_colloquial", "query": "咋申请退货？", "ground_truth_chunk_ids": [31], "difficulty": "medium"}
+{"id": "C09", "bucket": "C_colloquial", "query": "发票什么时候能拿到？", "ground_truth_chunk_ids": [19], "difficulty": "medium"}
+{"id": "C10", "bucket": "C_colloquial", "query": "收货了但有点毛病，怎么办？", "ground_truth_chunk_ids": [27], "difficulty": "hard"}
+{"id": "C11", "bucket": "C_colloquial", "query": "东西坏了能换吗？", "ground_truth_chunk_ids": [18], "difficulty": "hard"}
+{"id": "C12", "bucket": "C_colloquial", "query": "退货运费谁掏？", "ground_truth_chunk_ids": [30], "difficulty": "hard"}
+{"id": "C13", "bucket": "C_colloquial", "query": "偏远地区邮费要加钱不？", "ground_truth_chunk_ids": [29], "difficulty": "hard"}
+{"id": "C14", "bucket": "C_colloquial", "query": "下单后几天能发出来？", "ground_truth_chunk_ids": [25], "difficulty": "hard"}
+{"id": "E01", "bucket": "E_multi", "query": "退货流程怎么走，退款多久到账？", "ground_truth_chunk_ids": [31, 17], "difficulty": "medium"}
+{"id": "E02", "bucket": "E_multi", "query": "七天无理由退货要满足什么条件，审核通过后钱怎么退？", "ground_truth_chunk_ids": [28, 31], "difficulty": "medium"}
+{"id": "E03", "bucket": "E_multi", "query": "商品多久发货，偏远地区运费怎么算？", "ground_truth_chunk_ids": [25, 29], "difficulty": "medium"}
+{"id": "E04", "bucket": "E_multi", "query": "包邮门槛是多少，退货流程是什么？", "ground_truth_chunk_ids": [29, 31], "difficulty": "medium"}
+{"id": "E05", "bucket": "E_multi", "query": "发票怎么开，退货的运费怎么算？", "ground_truth_chunk_ids": [19, 29], "difficulty": "medium"}
+{"id": "E06", "bucket": "E_multi", "query": "质量问题退货的运费谁出，需要做什么？", "ground_truth_chunk_ids": [30, 31], "difficulty": "hard"}
+{"id": "E07", "bucket": "E_multi", "query": "换货有什么要求，质量问题能退款吗？", "ground_truth_chunk_ids": [18, 30], "difficulty": "hard"}
+{"id": "E08", "bucket": "E_multi", "query": "收到有质量问题的商品怎么办，退款多久到账？", "ground_truth_chunk_ids": [36, 17], "difficulty": "hard"}
+{"id": "E09", "bucket": "E_multi", "query": "商品多久发货，收到有问题怎么办？", "ground_truth_chunk_ids": [25, 27], "difficulty": "hard"}
+{"id": "E10", "bucket": "E_multi", "query": "电子发票怎么开，退款流程怎么申请？", "ground_truth_chunk_ids": [19, 33], "difficulty": "hard"}
