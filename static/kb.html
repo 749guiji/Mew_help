@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>知识库录入</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/kb.css">
+</head>
+<body class="kb-body">
+  <main class="kb-card">
+    <header class="chat-header">
+      <span class="avatar">📚</span>
+      <div class="header-text">
+        <h1>知识库录入</h1>
+        <p class="status"><a href="/" class="kb-back">← 返回聊天</a></p>
+      </div>
+    </header>
+
+    <div class="kb-main">
+      <section class="kb-section">
+        <h2>材料清单与切块预览</h2>
+        <div id="materials" class="kb-materials">加载中…</div>
+        <div id="preview" class="kb-preview"></div>
+      </section>
+
+      <section class="kb-section">
+        <h2>手工录入</h2>
+        <form id="entry-form" class="kb-form">
+          <label>类型
+            <select name="content_type">
+              <option value="faq">faq</option>
+              <option value="policy">policy</option>
+              <option value="manual">manual</option>
+            </select>
+          </label>
+          <label>分类
+            <input name="category" placeholder="如：售后">
+          </label>
+          <label>问法
+            <textarea name="questions" rows="2" placeholder="用户可能的问法，多个换行分隔"></textarea>
+          </label>
+          <label>答案
+            <textarea name="answer" rows="3" placeholder="答案正文"></textarea>
+          </label>
+          <button type="submit">录入（落 pending）</button>
+        </form>
+        <div id="entry-result" class="kb-result"></div>
+      </section>
+
+      <section class="kb-section">
+        <h2>向量化补 pending</h2>
+        <button id="vectorize-btn" type="button">补 pending</button>
+        <div id="vectorize-result" class="kb-result"></div>
+      </section>
+
+      <section class="kb-section">
+        <h2>检索自测</h2>
+        <div class="kb-search">
+          <input id="search-input" placeholder="输入问题，如：退货政策是什么？">
+          <button id="search-btn" type="button">检索</button>
+        </div>
+        <div id="search-result" class="kb-result"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/kb.js" defer></script>
+</body>
+</html>
