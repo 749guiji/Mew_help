@@ -108,3 +108,31 @@ def test_rebuild_drops_and_revectors_every_row(session, tmp_path):  # Review Foc
     assert all(session.get(KnowledgeChunk, i).vectorize_status == "done" for i in ids)
     hits = store.search_dense([0.1] * 1024, top_k=10)
     assert len(hits) == 2
+
+
+def test_build_session_store_embedder_does_not_ensure_collection(monkeypatch, tmp_path):
+    """Regression: --rebuild drops the old collection before ensure_collection,
+    so the CLI builder must NOT ensure the collection up front — otherwise the
+    ch03->ch04 schema guard in ensure_collection raises before the drop."""
+    from types import SimpleNamespace
+
+    import app.jobs.ingest_docs as ingest_docs
+
+    ensured = []
+
+    class Store:
+        def ensure_collection(self):
+            ensured.append(True)
+
+    settings = SimpleNamespace(
+        milvus_uri=str(tmp_path / "x.db"),
+        milvus_collection="knowledge",
+        embedding_dim=1024,
+    )
+    monkeypatch.setattr(ingest_docs, "MilvusStore", lambda *a, **k: Store())
+    monkeypatch.setattr(ingest_docs, "Embedder", lambda *a, **k: object())
+    monkeypatch.setattr(ingest_docs, "SessionLocal", lambda: object())
+    monkeypatch.setattr(ingest_docs, "get_settings", lambda: settings)
+
+    ingest_docs._build_session_store_embedder()
+    assert ensured == []

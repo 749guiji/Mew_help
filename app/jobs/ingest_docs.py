@@ -44,7 +44,6 @@ def _build_session_store_embedder():
         collection=settings.milvus_collection,
         dim=settings.embedding_dim,
     )
-    store.ensure_collection()
     embedder = Embedder(dim=settings.embedding_dim)
     return session, store, embedder, settings
 
@@ -74,6 +73,11 @@ def main(argv=None) -> int:
             n = rebuild(session, store, embedder)
             print(f"rebuild: re-vectorized {n} chunks into a fresh collection")
             return 0
+
+        # Non-rebuild paths need the collection to already exist with the new
+        # schema. If it's the old ch03 layout, ensure_collection raises the
+        # clear "--rebuild" hint instead of failing later at search time.
+        store.ensure_collection()
 
         if args.reconcile:
             n = vectorize_pending(session, store, embedder)
