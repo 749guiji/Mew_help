@@ -19,6 +19,30 @@ from app.tools.executor import ToolExecutor
 
 REFUSAL_TOKEN = "抱歉，我目前的知识库中没有足够信息回答您的问题，已为您记录并转人工处理。"
 
+logger = logging.getLogger(__name__)
+
+
+def _log_low_confidence(
+    conv_id: int | None, raw_question: str, source: str, reason: str | None
+) -> None:
+    """Log a low-confidence question, swallowing DB errors like ``_save_message``."""
+    try:
+        with SessionLocal() as s:
+            log_low_confidence(
+                s,
+                conversation_id=conv_id,
+                raw_question=raw_question,
+                source=source,
+                reason=reason,
+            )
+    except Exception as e:
+        logger.warning(
+            "Failed to log low-confidence question (%s) for conversation %s: %s",
+            source,
+            conv_id,
+            e,
+        )
+
 
 class ChatService:
     def __init__(
@@ -114,76 +138,86 @@ class ChatService:
             if ai_msg is not None and ai_msg.tool_calls:
                 messages.append(ai_msg)
 
-                results: list[tuple[dict, str]] = []
-                refusal_text: str | None = None
+                executed: list[tuple[dict, str]] = []
                 token = current_conversation_id.set(conv_id)
                 try:
                     for tc in ai_msg.tool_calls:
                         yield {"type": "tool", "name": tc["name"], "status": "running"}
-                        result = await self._executor.execute(tc["name"], tc["args"])
-                        status = "error" if result.startswith("[工具错误]") else "done"
+                        raw = await self._executor.execute(tc["name"], tc["args"])
+                        status = "error" if raw.startswith("[工具错误]") else "done"
                         yield {"type": "tool", "name": tc["name"], "status": status}
+                        executed.append((tc, raw))
+                finally:
+                    current_conversation_id.reset(token)
 
-                        parsed = None
-                        if tc["name"] == "query_faq":
-                            try:
-                                parsed = json.loads(result)
-                            except (json.JSONDecodeError, TypeError):
-                                parsed = None
+                # Process each executed tool into its final ToolMessage content and
+                # any refusal metadata, then decide whether to short-circuit. A
+                # query_faq refusal only short-circuits when every executed tool
+                # refused (no other tool produced a result to persist/show).
+                contents: list[str] = []
+                citations_by_tool: list[list | None] = []
+                refusal_sources: list[str | None] = []
+                refusal_reasons: list[str | None] = []
 
-                        if parsed is not None and parsed.get("refused") is True:
-                            # Retrieval refused: no ToolMessage, canned refusal,
-                            # log into the low-confidence pool, skip convergence.
-                            if refusal_text is None:
-                                yield {"type": "token", "content": REFUSAL_TOKEN}
-                                refusal_text = REFUSAL_TOKEN
-                            with SessionLocal() as s:
-                                log_low_confidence(
-                                    s,
-                                    conversation_id=conv_id,
-                                    raw_question=message,
-                                    source="retrieval_low_conf",
-                                    reason=None,
-                                )
-                            continue
+                for tc, raw in executed:
+                    parsed = None
+                    if tc["name"] == "query_faq":
+                        try:
+                            parsed = json.loads(raw)
+                        except (json.JSONDecodeError, TypeError):
+                            parsed = None
 
-                        if parsed is not None and parsed.get("refused") is False:
-                            citations = parsed.get("citations") or []
-                            yield {"type": "citations", "citations": citations}
-                            evidence = parsed.get("evidence") or ""
-                            check = self_check(self._llm, message, evidence)
-                            if not check.sufficient:
-                                if refusal_text is None:
-                                    yield {"type": "token", "content": REFUSAL_TOKEN}
-                                    refusal_text = REFUSAL_TOKEN
-                                with SessionLocal() as s:
-                                    log_low_confidence(
-                                        s,
-                                        conversation_id=conv_id,
-                                        raw_question=message,
-                                        source="self_check",
-                                        reason=check.reason,
-                                    )
-                                continue
-                            # Sufficient: feed the evidence text (not the JSON).
-                            result = evidence
+                    source = None
+                    reason = None
+                    citations = None
+                    content = raw
 
-                        results.append((tc, result))
+                    if parsed is not None and parsed.get("refused") is True:
+                        source = "retrieval_low_conf"
+                    elif parsed is not None and parsed.get("refused") is False:
+                        citations = parsed.get("citations") or []
+                        evidence = parsed.get("evidence") or ""
+                        check = self_check(self._llm, message, evidence)
+                        if not check.sufficient:
+                            source = "self_check"
+                            reason = check.reason
+                        else:
+                            content = evidence
+
+                    contents.append(content)
+                    citations_by_tool.append(citations)
+                    refusal_sources.append(source)
+                    refusal_reasons.append(reason)
+
+                has_refusal = any(s is not None for s in refusal_sources)
+                has_non_refused = any(s is None for s in refusal_sources)
+                short_circuit = has_refusal and not has_non_refused
+
+                for citations in citations_by_tool:
+                    if citations is not None:
+                        yield {"type": "citations", "citations": citations}
+
+                for source, reason in zip(refusal_sources, refusal_reasons):
+                    if source is not None:
+                        _log_low_confidence(conv_id, message, source, reason)
+
+                if short_circuit:
+                    yield {"type": "token", "content": REFUSAL_TOKEN}
+                    self._save_message(conv_id, role="user", content=message)
+                    self._save_message(conv_id, role="assistant", content=REFUSAL_TOKEN)
+                    reply = REFUSAL_TOKEN
+                else:
+                    results: list[tuple[dict, str]] = []
+                    for (tc, raw), content in zip(executed, contents):
+                        results.append((tc, content))
                         messages.append(
                             ToolMessage(
-                                content=result,
+                                content=content,
                                 tool_call_id=tc["id"],
                                 name=tc["name"],
                             )
                         )
-                finally:
-                    current_conversation_id.reset(token)
 
-                if refusal_text is not None:
-                    self._save_message(conv_id, role="user", content=message)
-                    self._save_message(conv_id, role="assistant", content=refusal_text)
-                    reply = refusal_text
-                else:
                     self._save_message(conv_id, role="user", content=message)
                     self._save_message(
                         conv_id,
@@ -191,9 +225,9 @@ class ChatService:
                         content=None,
                         tool_calls=ai_msg.tool_calls,
                     )
-                    for tc, result in results:
+                    for tc, content in results:
                         self._save_message(
-                            conv_id, role="tool", content=result, tool_call_id=tc["id"]
+                            conv_id, role="tool", content=content, tool_call_id=tc["id"]
                         )
 
                     # Final convergence stream uses the UNBOUND model so the model

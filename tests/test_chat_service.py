@@ -62,7 +62,7 @@ class _BoundFakeLLM:
     async def astream(self, messages):
         self.base.streams.append([m.content for m in messages])
         if self.base.tool_calls is not None:
-            for tc in self.base.tool_calls:
+            for i, tc in enumerate(self.base.tool_calls):
                 yield AIMessageChunk(
                     content="",
                     tool_call_chunks=[
@@ -70,7 +70,7 @@ class _BoundFakeLLM:
                             "name": tc["name"],
                             "args": json.dumps(tc["args"], ensure_ascii=False),
                             "id": tc["id"],
-                            "index": 0,
+                            "index": i,
                         }
                     ],
                 )
@@ -98,6 +98,15 @@ class _JsonFaqTool:
     name = "query_faq"
 
     def __init__(self, payload):
+        self.payload = payload
+
+    async def ainvoke(self, args):
+        return self.payload
+
+
+class _PlainTool:
+    def __init__(self, name, payload):
+        self.name = name
         self.payload = payload
 
     async def ainvoke(self, args):
@@ -342,3 +351,63 @@ def test_query_faq_retrieval_refusal_logs_retrieval_low_conf(sqlite_session_loca
         assert rows[0].source == "retrieval_low_conf"
         assert rows[0].reason is None
         assert rows[0].raw_question == "有外星人吗"
+
+
+def test_query_faq_refusal_with_other_tool_does_not_short_circuit(sqlite_session_local):
+    faq_json = '{"refused": true, "evidence": "", "citations": []}'
+    fake = FakeLLM(
+        reply="已为您创建工单，FAQ 暂未查到。",
+        tool_calls=[
+            {"name": "query_faq", "args": {"keyword": "外星人"}, "id": "call_1"},
+            {"name": "create_ticket", "args": {"description": "咨询", "ticket_type": "咨询"}, "id": "call_2"},
+        ],
+        chunks=["已为您创建工单，", "FAQ 暂未查到。"],
+    )
+    faq_tool = _JsonFaqTool(faq_json)
+    ticket_tool = _PlainTool("create_ticket", "T20260101000000001")
+    svc = ChatService(
+        llm=fake,
+        tools=[faq_tool, ticket_tool],
+        executor=ToolExecutor(
+            registry={"query_faq": faq_tool, "create_ticket": ticket_tool}
+        ),
+    )
+
+    ev = asyncio.run(collect(svc.stream_chat(None, "帮我咨询外星人并开个工单")))
+
+    # Final generation still ran with both tool results; no canned refusal token.
+    assert [e["content"] for e in ev if e["type"] == "token"] == ["已为您创建工单，", "FAQ 暂未查到。"]
+    assert not [e for e in ev if e["type"] == "citations"]
+    assert ev[-1]["type"] == "done"
+
+    with sqlite_session_local() as s:
+        rows = s.query(Message).order_by(Message.id).all()
+        assert [m.role for m in rows] == ["user", "assistant", "tool", "tool", "assistant"]
+        tool_contents = sorted(m.content for m in rows if m.role == "tool")
+        assert faq_json in tool_contents
+        assert "T20260101000000001" in tool_contents
+        low = s.query(LowConfidenceQuestion).all()
+        assert len(low) == 1
+        assert low[0].source == "retrieval_low_conf"
+        assert low[0].raw_question == "帮我咨询外星人并开个工单"
+
+
+def test_query_faq_refusal_db_outage_does_not_emit_error(monkeypatch, caplog):
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(chat_service_module, "SessionLocal", boom)
+    fake = FakeLLM(
+        reply="",
+        tool_calls=[{"name": "query_faq", "args": {"keyword": "外星人"}, "id": "call_1"}],
+        chunks=[],
+    )
+    svc = _json_faq_service(fake, '{"refused": true, "evidence": "", "citations": []}')
+
+    with caplog.at_level(logging.WARNING, logger="app.services.chat_service"):
+        ev = asyncio.run(collect(svc.stream_chat(None, "有外星人吗")))
+
+    assert ev[-1]["type"] == "done"
+    assert [e["content"] for e in ev if e["type"] == "token"] == [REFUSAL_TOKEN]
+    assert not [e for e in ev if e["type"] == "error"]
+    assert "db down" in caplog.text
