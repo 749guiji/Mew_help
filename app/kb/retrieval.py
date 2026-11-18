@@ -1,10 +1,12 @@
-"""Online retrieval: embed a query, search Milvus, fetch the answer from MySQL.
+"""Production retrieval entry point: query understanding -> hybrid rerank.
 
-This is the read half of the ch03 knowledge-base pipeline. A query is embedded
-with :class:`app.kb.embedding.Embedder`, the vector is searched against
-:class:`app.kb.milvus_store.MilvusStore`, and the top hit's id is used to load
-the source-of-truth row from ``knowledge_chunks`` (MySQL) so the returned answer
-is always the authoritative text, not a copy cached in the vector store.
+This is the read half of the knowledge-base pipeline. A query goes through
+query rewrite + synonym expansion (see :mod:`app.kb.hybrid`) and is answered by
+the hybrid+rerank strategy, which searches Milvus and backfills the
+source-of-truth ``knowledge_chunks`` row from MySQL.
+
+Heavy components (Milvus client, embedder, reranker, rewrite LLM) are cached
+process-wide so repeated queries do not re-open Milvus Lite or reload models.
 """
 
 from __future__ import annotations
@@ -12,39 +14,12 @@ from __future__ import annotations
 import functools
 
 from app.core.config import get_settings
+from app.core.llm import get_llm
 from app.db import SessionLocal
-from app.db.models import KnowledgeChunk
 from app.kb.embedding import Embedder
+from app.kb.hybrid import ScoredChunk, retrieve_with_understanding
 from app.kb.milvus_store import MilvusStore
-
-
-def retrieve(
-    session,
-    store,
-    embedder,
-    query: str,
-    *,
-    top_k: int = 1,
-    threshold: float = 0.5,
-) -> str | None:
-    """Return the answer of the best-matching chunk, or ``None`` if none qualify.
-
-    ``embed_texts([query])[0]`` is searched against ``store``; only a top hit
-    whose cosine similarity is ``>= threshold`` is accepted. Its id is then
-    resolved via ``session`` into the ``KnowledgeChunk`` row and the ``answer``
-    returned. An empty collection yields no hits and therefore ``None``.
-    """
-    vector = embedder.embed_texts([query])[0]
-    hits = store.search(vector, top_k)
-    if not hits:
-        return None
-
-    chunk_id, score = hits[0]
-    if score < threshold:
-        return None
-
-    chunk = session.get(KnowledgeChunk, chunk_id)
-    return chunk.answer if chunk else None
+from app.kb.reranker import Reranker
 
 
 @functools.lru_cache(maxsize=1)
@@ -65,24 +40,48 @@ def _get_store() -> MilvusStore:
     return store
 
 
-def default_retrieve(query: str) -> str | None:
-    """Integration entry point: build real store/embedder/session from settings.
+@functools.lru_cache(maxsize=1)
+def _get_embedder() -> Embedder:
+    """Build (and cache) the configured embedder."""
+    settings = get_settings()
+    return Embedder(dim=settings.embedding_dim)
 
-    Used by the chat tool path (``query_faq``) and Task 8 wiring. The store is
-    cached process-wide (see :func:`_get_store`); the collection is ensured at
-    build time so a fresh data dir still degrades gracefully to ``None`` instead
+
+@functools.lru_cache(maxsize=1)
+def _get_reranker() -> Reranker:
+    """Build (and cache) the configured cross-encoder reranker."""
+    settings = get_settings()
+    return Reranker(
+        model_name=settings.rerank_model,
+        use_fp16=settings.rerank_use_fp16,
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _get_rewrite_llm():
+    """Build (and cache) the LLM used for query rewriting."""
+    return get_llm()
+
+
+def default_retrieve(query: str) -> list[ScoredChunk]:
+    """Integration entry point: build cached components and run the pipeline.
+
+    Used by the chat tool path (``query_faq``). The store is cached
+    process-wide (see :func:`_get_store`); the collection is ensured at build
+    time so a fresh data dir still degrades gracefully to an empty list instead
     of raising.
     """
-    settings = get_settings()
     store = _get_store()
-    embedder = Embedder(dim=settings.embedding_dim)
+    embedder = _get_embedder()
+    reranker = _get_reranker()
+    rewrite_llm = _get_rewrite_llm()
 
     with SessionLocal() as session:
-        return retrieve(
-            session,
-            store,
-            embedder,
+        return retrieve_with_understanding(
             query,
-            top_k=settings.retrieval_top_k,
-            threshold=settings.retrieval_threshold,
+            session=session,
+            store=store,
+            embedder=embedder,
+            reranker=reranker,
+            rewrite_llm=rewrite_llm,
         )

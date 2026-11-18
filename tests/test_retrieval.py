@@ -1,56 +1,86 @@
-"""Tests for the online retrieval path (ch03 Task 6)."""
+"""Tests for the production retrieval entry point (ch04 Task 5)."""
 
-from app.kb.chunker import Chunk
-from app.kb.ingest import insert_chunks, vectorize_pending
-from app.kb.milvus_store import MilvusStore
-from app.kb.retrieval import retrieve
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import app.kb.retrieval as retrieval_mod
+from app.db import Base
+from app.db.models import KnowledgeChunk
+from app.kb.hybrid import ScoredChunk
+from app.kb.milvus_store import Hit
+from app.kb.query_understanding import QueryUnderstanding
 
 
-class HitEmbedder:
-    dim = 1024
+class _FakeStore:
+    def hybrid_search(self, dense_vector, sparse_text, top_k=1, filter=None):
+        return [
+            Hit(
+                id=1,
+                score=0.9,
+                text="",
+                category="退款",
+                content_type="faq",
+                section_path=None,
+            )
+        ]
 
+
+class _FakeEmbedder:
     def embed_texts(self, texts):
-        return [[0.1] * self.dim for _ in texts]  # 一切文本同向量 → 恒命中
+        return [[0.0] * 1024 for _ in texts]
 
 
-class MissEmbedder:
-    dim = 1024
-
-    def embed_texts(self, texts):
-        return [[-0.1] * self.dim for _ in texts]  # 与存储向量相反 → 恒未命中
+class _FakeReranker:
+    def rerank(self, query, docs):
+        return [0.7] * len(docs)
 
 
-def _chunk():
-    return Chunk(
-        category="售后",
-        questions="运费说明",
-        answer="满99包邮",
-        section_path=None,
-        content_type="policy",
-        is_key_clause=False,
-    )
+class _FakeStructuredRunnable:
+    def __call__(self, inp):
+        return QueryUnderstanding(standard_question="退货", category="退款")
 
 
-def test_retrieve_hit_returns_answer(session, tmp_path):
-    store = MilvusStore(str(tmp_path / "kv.db"))
-    store.ensure_collection()
-    insert_chunks(session, [_chunk()])
-    vectorize_pending(session, store, HitEmbedder())
-    assert retrieve(session, store, HitEmbedder(), "邮费是多少") == "满99包邮"
+class _FakeRewriteLLM:
+    def with_structured_output(self, model, method=None):
+        return _FakeStructuredRunnable()
 
 
-def test_retrieve_below_threshold_returns_none(session, tmp_path):
-    store = MilvusStore(str(tmp_path / "kv.db"))
-    store.ensure_collection()
-    insert_chunks(session, [_chunk()])
-    vectorize_pending(session, store, HitEmbedder())
-    assert retrieve(session, store, MissEmbedder(), "邮费是多少") is None
+def _make_session_local():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_local = sessionmaker(bind=engine)
+    with session_local() as s:
+        s.add(
+            KnowledgeChunk(
+                id=1,
+                category="退款",
+                questions="退货",
+                answer="7天无理由",
+                section_path=None,
+                content_type="faq",
+                is_key_clause=0,
+                vectorize_status="done",
+            )
+        )
+        s.commit()
+    return session_local
 
 
-def test_retrieve_empty_collection(session, tmp_path):  # Review Focus #4
-    store = MilvusStore(str(tmp_path / "kv.db"))
-    store.ensure_collection()
-    assert retrieve(session, store, HitEmbedder(), "邮费是多少") is None
+def test_default_retrieve_returns_scored_chunks(monkeypatch):
+    monkeypatch.setattr(retrieval_mod, "_get_store", lambda: _FakeStore())
+    monkeypatch.setattr(retrieval_mod, "_get_embedder", lambda: _FakeEmbedder())
+    monkeypatch.setattr(retrieval_mod, "_get_reranker", lambda: _FakeReranker())
+    monkeypatch.setattr(retrieval_mod, "_get_rewrite_llm", lambda: _FakeRewriteLLM())
+    monkeypatch.setattr(retrieval_mod, "SessionLocal", _make_session_local())
+
+    out = retrieval_mod.default_retrieve("怎么退货")
+
+    assert isinstance(out, list)
+    assert len(out) == 1
+    assert isinstance(out[0], ScoredChunk)
+    assert out[0].chunk_id == 1
+    assert out[0].answer == "7天无理由"
+    assert out[0].score == 0.7
 
 
 def test_query_faq_degrades_to_not_found(monkeypatch):  # Review Focus #5
