@@ -97,6 +97,109 @@ def run_strategy(name, items, *, session, store, embedder, reranker, top_k):
     return ranked
 
 
+def _generate_answer(llm, question: str, evidence: str) -> str:
+    """Generate a grounded answer from the numbered evidence using SYSTEM_PROMPT."""
+    from langchain_core.prompts import ChatPromptTemplate
+
+    from app.prompts.system import SYSTEM_PROMPT
+
+    chain = ChatPromptTemplate.from_messages(
+        [
+            ("system", SYSTEM_PROMPT),
+            ("human", "用户问题：{question}\n\n检索到的证据：\n{evidence}"),
+        ]
+    ) | llm
+    return chain.invoke({"question": question, "evidence": evidence}).content
+
+
+def run_faithfulness(items, *, settings, limit=0, verbose=False) -> int:
+    """Generation segment: hybrid+rerank -> answer -> faithfulness judge -> ledger.
+
+    For each eval item, retrieves via ``default_retrieve`` (the production
+    hybrid+rerank path with query understanding), formats the evidence, generates
+    an answer, and asks ``judge_faithfulness`` whether the answer is supported by
+    the citations. Unfaithful answers are upserted into ``faith_cases``. Prints a
+    Faithfulness rate plus a per-bucket breakdown and the ``faith_cases`` count.
+    """
+    from app.core.llm import get_llm
+    from app.db.models import FaithCase
+    from app.kb.retrieval import default_retrieve
+    from app.services.generation_quality import build_citations, format_evidence
+    from evaluation.faithfulness import judge_faithfulness, record_faith_case
+
+    llm = get_llm(settings)
+    judge_model = settings.model
+    items = items[:limit] if limit else items
+
+    counts: dict[str, int] = defaultdict(int)
+    totals: dict[str, int] = defaultdict(int)
+    faithful = 0
+    total = 0
+    cases_written = 0
+    errors = 0
+
+    for item in items:
+        eval_id = item["id"]
+        bucket = item["bucket"]
+        query = item["query"]
+        try:
+            chunks = default_retrieve(query)
+            evidence = format_evidence(chunks)
+            citations = build_citations(chunks)
+            answer = _generate_answer(llm, query, evidence)
+            result = judge_faithfulness(llm, query, answer, citations)
+        except Exception as exc:  # noqa: BLE001 - keep the long eval going
+            errors += 1
+            print(f"  [error] {eval_id} [{bucket}] {query}: {exc!r}", flush=True)
+            continue
+
+        total += 1
+        totals[bucket] += 1
+        if result.faithful:
+            faithful += 1
+            counts[bucket] += 1
+        else:
+            with SessionLocal() as session:
+                record_faith_case(
+                    session,
+                    eval_id=eval_id,
+                    bucket=bucket,
+                    query=query,
+                    strategy="hybrid_rerank",
+                    answer=answer,
+                    reason=result.reason,
+                    citations=citations,
+                    judge_model=judge_model,
+                )
+            cases_written += 1
+        if verbose:
+            print(
+                f"  {eval_id} [{bucket}] faithful={result.faithful} "
+                f"reason={result.reason!r}",
+                flush=True,
+            )
+
+    print()
+    print("Faithfulness (generation segment, hybrid_rerank):")
+    if total:
+        print(f"  faithful / total = {faithful}/{total} = {faithful / total:.3f}")
+    else:
+        print("  faithful / total = 0/0")
+    print("  per-bucket:")
+    for bucket in BUCKETS:
+        n = totals.get(bucket, 0)
+        if n:
+            c = counts.get(bucket, 0)
+            print(f"    {bucket}: {c}/{n} = {c / n:.3f}")
+    with SessionLocal() as session:
+        rows = session.query(FaithCase).count()
+    print(f"  faith_cases rows (total in table): {rows}")
+    print(f"  unfaithful recorded this run: {cases_written}")
+    if errors:
+        print(f"  errors skipped: {errors}")
+    return 0
+
+
 def _fmt(value: float) -> str:
     return f"{value:.3f}"
 
@@ -120,6 +223,17 @@ def main(argv=None) -> int:
         help="comma-separated Recall@K cutoffs (default: 1,3,5,10)",
     )
     parser.add_argument("--verbose", action="store_true", help="print per-query hit ids")
+    parser.add_argument(
+        "--faithfulness",
+        action="store_true",
+        help="run the generation segment (hybrid_rerank answer -> faithfulness judge -> faith_cases)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="only run the first N eval items (0 = all; generation segment only)",
+    )
     args = parser.parse_args(argv)
 
     strategy_names = [s.strip() for s in args.strategies.split(",") if s.strip()]
@@ -137,6 +251,11 @@ def main(argv=None) -> int:
 
     items = load_eval_set(Path(args.eval_set))
     settings = get_settings()
+
+    if args.faithfulness:
+        return run_faithfulness(
+            items, settings=settings, limit=args.limit, verbose=args.verbose
+        )
 
     store = MilvusStore(
         settings.milvus_uri,
