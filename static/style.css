@@ -253,3 +253,134 @@ body {
     border-radius: 0;
   }
 }
+
+/* 引用编号 */
+.cite {
+  border: none;
+  background: transparent;
+  color: var(--brand-hover);
+  font-size: 0.75em;
+  vertical-align: super;
+  padding: 0 1px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cite:hover {
+  text-decoration: underline;
+}
+
+/* 引用来源弹层 */
+.cite-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(59, 47, 38, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 10;
+}
+
+.cite-modal[hidden] {
+  display: none;
+}
+
+.cite-card {
+  width: 100%;
+  max-width: 460px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.cite-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.cite-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cite-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cite-close:hover {
+  color: var(--text);
+}
+
+.cite-path {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-hover);
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.cite-body {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  padding: 10px 12px;
+  background: var(--assistant-bubble);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* 满意度反馈 */
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fb-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.fb-btn:hover {
+  background: #fff3e6;
+}
+
+.fb-btn.selected {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  transform: scale(1.08);
+}
+
+.fb-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.fb-done {
+  font-size: 12px;
+  color: var(--muted);
+}

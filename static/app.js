@@ -4,6 +4,10 @@ let sseBuffer = "";
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
+const citeModal = document.getElementById("cite-modal");
+const citePathEl = document.getElementById("cite-path");
+const citeBodyEl = document.getElementById("cite-body");
+const citeCloseEl = document.getElementById("cite-close");
 
 function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -58,22 +62,102 @@ function renderToolBadge(badgeEl, evt) {
   }
 }
 
-function dispatch(evt, textSpan, badgeEl) {
+// 把答案文本里的 [n] / ［n］ 转成可点的引用编号。
+function linkifyCitations(textSpan, citations) {
+  const text = textSpan.textContent;
+  if (!text) return;
+  const map = {};
+  for (const c of citations) map[c.n] = c;
+  if (!/[\[［][0-9]+[\]］]/.test(text)) return;
+
+  textSpan.textContent = "";
+  const parts = text.split(/([\[［][0-9]+[\]］])/g);
+  for (const part of parts) {
+    const m = part.match(/^[\[［]([0-9]+)[\]］]$/);
+    if (m && map[Number(m[1])]) {
+      const n = Number(m[1]);
+      const btn = document.createElement("button");
+      btn.className = "cite";
+      btn.textContent = "[" + n + "]";
+      btn.type = "button";
+      btn.addEventListener("click", () => showCitation(n, map));
+      textSpan.appendChild(btn);
+    } else {
+      textSpan.appendChild(document.createTextNode(part));
+    }
+  }
+}
+
+function showCitation(n, map) {
+  const c = map[n];
+  if (!c) return;
+  citePathEl.textContent = c.section_path || "（未标注章节）";
+  citeBodyEl.textContent = c.answer_snippet || "（无正文）";
+  citeModal.hidden = false;
+}
+
+function closeCitation() {
+  citeModal.hidden = true;
+}
+
+// 每段助手回答左下角的 👍👎，点一次点亮所选并锁定。
+function addFeedback(contentEl) {
+  const fb = document.createElement("div");
+  fb.className = "feedback";
+
+  const up = document.createElement("button");
+  up.className = "fb-btn";
+  up.type = "button";
+  up.textContent = "👍";
+  up.setAttribute("aria-label", "满意");
+
+  const down = document.createElement("button");
+  down.className = "fb-btn";
+  down.type = "button";
+  down.textContent = "👎";
+  down.setAttribute("aria-label", "不满意");
+
+  const label = document.createElement("span");
+  label.className = "fb-done";
+  label.textContent = "已反馈";
+  label.hidden = true;
+
+  let locked = false;
+  function lock(chosen) {
+    if (locked) return;
+    locked = true;
+    chosen.classList.add("selected");
+    up.disabled = true;
+    down.disabled = true;
+    label.hidden = false;
+  }
+  up.addEventListener("click", () => lock(up));
+  down.addEventListener("click", () => lock(down));
+
+  fb.appendChild(up);
+  fb.appendChild(down);
+  fb.appendChild(label);
+  contentEl.appendChild(fb);
+}
+
+function dispatch(evt, ctx) {
   if (evt.type === "meta") {
     state.sessionId = evt.session_id;
   } else if (evt.type === "token") {
-    textSpan.textContent += evt.content;
+    ctx.textSpan.textContent += evt.content;
     scrollToBottom();
   } else if (evt.type === "tool") {
-    renderToolBadge(badgeEl, evt);
+    renderToolBadge(ctx.badgeEl, evt);
     scrollToBottom();
+  } else if (evt.type === "citations") {
+    ctx.citations = evt.citations || [];
   } else if (evt.type === "error") {
-    textSpan.textContent += "\n[出错了] " + evt.message;
+    ctx.textSpan.textContent += "\n[出错了] " + evt.message;
     scrollToBottom();
   }
 }
 
-function handleSSE(chunk, textSpan, badgeEl) {
+function handleSSE(chunk, ctx) {
   sseBuffer += chunk;
   const parts = sseBuffer.split("\n\n");
   sseBuffer = parts.pop();
@@ -81,7 +165,7 @@ function handleSSE(chunk, textSpan, badgeEl) {
     for (const line of part.split("\n")) {
       if (line.startsWith("data: ")) {
         try {
-          dispatch(JSON.parse(line.slice(6)), textSpan, badgeEl);
+          dispatch(JSON.parse(line.slice(6)), ctx);
         } catch (err) {
           // 忽略无法解析的帧
         }
@@ -110,6 +194,8 @@ async function send() {
   cursor.className = "cursor";
   contentEl.appendChild(cursor);
 
+  const ctx = { textSpan, badgeEl, citations: [] };
+
   setStreaming(true);
   try {
     const res = await fetch("/chat", {
@@ -123,13 +209,15 @@ async function send() {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      handleSSE(decoder.decode(value, { stream: true }), textSpan, badgeEl);
+      handleSSE(decoder.decode(value, { stream: true }), ctx);
     }
   } catch (err) {
     textSpan.textContent += "\n[出错了] " + err.message;
   } finally {
     cursor.remove();
     setStreaming(false);
+    if (ctx.citations.length) linkifyCitations(textSpan, ctx.citations);
+    addFeedback(contentEl);
     scrollToBottom();
   }
 }
@@ -141,4 +229,9 @@ inputEl.addEventListener("keydown", (e) => {
     e.preventDefault();
     send();
   }
+});
+
+citeCloseEl.addEventListener("click", closeCitation);
+citeModal.addEventListener("click", (e) => {
+  if (e.target === citeModal) closeCitation();
 });
