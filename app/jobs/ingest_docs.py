@@ -21,7 +21,7 @@ from app.core.config import get_settings
 from app.db import SessionLocal
 from app.db.models import KnowledgeChunk
 from app.kb.embedding import Embedder
-from app.kb.ingest import ingest_document, migrate_faq, vectorize_pending
+from app.kb.ingest import ingest_document, migrate_faq, rebuild, vectorize_pending
 from app.kb.milvus_store import MilvusStore
 
 _KNOWLEDGE_DIR = Path("knowledge")
@@ -61,10 +61,20 @@ def main(argv=None) -> int:
         action="store_true",
         help="Allow a full build even when knowledge_chunks already has rows.",
     )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Drop + recreate the Milvus collection and re-vectorize every chunk.",
+    )
     args = parser.parse_args(argv)
 
     session, store, embedder, settings = _build_session_store_embedder()
     try:
+        if args.rebuild:
+            n = rebuild(session, store, embedder)
+            print(f"rebuild: re-vectorized {n} chunks into a fresh collection")
+            return 0
+
         if args.reconcile:
             n = vectorize_pending(session, store, embedder)
             print(f"reconcile: vectorized {n} pending chunks")

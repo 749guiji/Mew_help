@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from app.db.models import Faq, KnowledgeChunk
 from app.kb.chunker import Chunk, chunk_markdown
+from app.kb.milvus_store import MilvusRecord
 
 # 逐批向量化:一批 embed + upsert 后即 commit,中断后重跑只需补齐剩余批。
 _BATCH_SIZE = 32
@@ -82,7 +83,20 @@ def vectorize_pending(session, store, embedder) -> int:
                 f"embedding dimension mismatch: expected {embedder.dim}, got {len(vector)}"
             )
 
-        store.upsert([(row.id, vector) for row, vector in zip(batch, vectors)])
+        store.upsert(
+            [
+                MilvusRecord(
+                    id=row.id,
+                    text=text,
+                    dense=vector,
+                    category=row.category,
+                    content_type=row.content_type,
+                    section_path=row.section_path,
+                    is_key_clause=bool(row.is_key_clause),
+                )
+                for row, text, vector in zip(batch, texts, vectors)
+            ]
+        )
 
         for row in batch:
             row.vectorize_status = "done"
@@ -91,6 +105,22 @@ def vectorize_pending(session, store, embedder) -> int:
         total += len(batch)
 
     return total
+
+
+def rebuild(session, store, embedder) -> int:
+    """Drop + recreate the Milvus collection and re-vectorize every chunk.
+
+    Used by ``ingest_docs --rebuild`` when the collection schema changes (e.g.
+    ch03's ``id``+``vector`` layout to ch04's BM25/hybrid schema): MySQL
+    ``knowledge_chunks`` stays the source of truth, so every row is reset to
+    ``pending`` and written back into a fresh collection with the new schema.
+    """
+    store.drop_collection()
+    store.ensure_collection()
+
+    session.query(KnowledgeChunk).update({"vectorize_status": "pending"})
+    session.commit()
+    return vectorize_pending(session, store, embedder)
 
 
 def ingest_document(

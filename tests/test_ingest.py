@@ -2,7 +2,7 @@
 
 from app.db.models import Faq, KnowledgeChunk
 from app.kb.chunker import Chunk
-from app.kb.ingest import insert_chunks, migrate_faq, vectorize_pending
+from app.kb.ingest import insert_chunks, migrate_faq, rebuild, vectorize_pending
 from app.kb.milvus_store import MilvusStore
 
 
@@ -59,7 +59,7 @@ def test_interrupt_then_rerun_picks_up_pending(session, tmp_path):  # 验收 #2
     assert vectorize_pending(session, store, FakeEmbedder()) == 2  # 重跑补齐
     assert vectorize_pending(session, store, FakeEmbedder()) == 0  # 再跑无事可做(幂等)
     assert all(session.get(KnowledgeChunk, i).vectorize_status == "done" for i in ids)
-    hits = store.search([0.1] * 1024, top_k=10)
+    hits = store.search_dense([0.1] * 1024, top_k=10)
     assert len(hits) == 2
 
 
@@ -92,5 +92,19 @@ def test_vectorize_pending_batches_over_32(session, tmp_path):
     n = vectorize_pending(session, store, FakeEmbedder())
     assert n == 70
     assert all(session.get(KnowledgeChunk, i).vectorize_status == "done" for i in ids)
-    hits = store.search([0.1] * 1024, top_k=100)
+    hits = store.search_dense([0.1] * 1024, top_k=100)
     assert len(hits) == 70
+
+
+def test_rebuild_drops_and_revectors_every_row(session, tmp_path):  # Review Focus #4
+    store = MilvusStore(str(tmp_path / "kv.db"))
+    store.ensure_collection()
+    ids = insert_chunks(session, _chunks())
+    assert vectorize_pending(session, store, FakeEmbedder()) == 2
+    assert all(session.get(KnowledgeChunk, i).vectorize_status == "done" for i in ids)
+
+    # --rebuild: drop + recreate the collection, reset status, re-vectorize.
+    assert rebuild(session, store, FakeEmbedder()) == 2
+    assert all(session.get(KnowledgeChunk, i).vectorize_status == "done" for i in ids)
+    hits = store.search_dense([0.1] * 1024, top_k=10)
+    assert len(hits) == 2
