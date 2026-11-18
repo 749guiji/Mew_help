@@ -10,8 +10,9 @@ from sqlalchemy.orm import sessionmaker
 import app.db as app_db
 import app.services.chat_service as chat_service_module
 from app.db import Base
-from app.db.models import Conversation, Message
-from app.services.chat_service import ChatService
+from app.db.models import Conversation, LowConfidenceQuestion, Message
+from app.services.chat_service import REFUSAL_TOKEN, ChatService
+from app.services.generation_quality import SelfCheckResult
 from app.tools.executor import ToolExecutor
 
 
@@ -29,10 +30,18 @@ class FakeLLM:
         self.chunks = chunks if chunks is not None else [reply]
         self.invokes = []
         self.streams = []
+        self.self_check_result = SelfCheckResult(sufficient=True, reason="")
+        self.structured_model = None
+        self.structured_method = None
 
     def bind_tools(self, tools):
         self.bound_tools = tools
         return _BoundFakeLLM(self)
+
+    def with_structured_output(self, model, method=None):
+        self.structured_model = model
+        self.structured_method = method
+        return _CannedStructured(self.self_check_result)
 
     async def ainvoke(self, messages):
         self.invokes.append([m.content for m in messages])
@@ -70,11 +79,29 @@ class _BoundFakeLLM:
                 yield AIMessageChunk(content=c)
 
 
+class _CannedStructured:
+    def __init__(self, result):
+        self._result = result
+
+    def __call__(self, inp):
+        return self._result
+
+
 class _FakeTool:
     name = "query_faq"
 
     async def ainvoke(self, args):
         return "退货政策：7天无理由退货"
+
+
+class _JsonFaqTool:
+    name = "query_faq"
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def ainvoke(self, args):
+        return self.payload
 
 
 class _FailingTool:
@@ -222,3 +249,96 @@ def test_db_failure_is_logged_and_swallowed(monkeypatch, caplog):
         ev = asyncio.run(collect(svc.stream_chat(None, "hi")))
     assert ev[-1]["type"] == "done"
     assert "db down" in caplog.text
+
+
+def _json_faq_service(fake, payload):
+    tool = _JsonFaqTool(payload)
+    return ChatService(
+        llm=fake,
+        tools=[tool],
+        executor=ToolExecutor(registry={"query_faq": tool}),
+    )
+
+
+def test_query_faq_emits_citations_sse_and_uses_evidence(sqlite_session_local):
+    evidence = "[1] 售后退款: 7天无理由退货"
+    citations = [
+        {
+            "n": 1,
+            "chunk_id": 1,
+            "section_path": "售后退款",
+            "answer_snippet": "7天无理由退货",
+        }
+    ]
+    fake = FakeLLM(
+        reply="根据证据，7天无理由退货。",
+        tool_calls=[{"name": "query_faq", "args": {"keyword": "退货"}, "id": "call_1"}],
+        chunks=["根据证据，", "7天无理由退货。"],
+    )
+    fake.self_check_result = SelfCheckResult(sufficient=True, reason="")
+    svc = _json_faq_service(
+        fake, json.dumps({"refused": False, "evidence": evidence, "citations": citations}, ensure_ascii=False)
+    )
+
+    ev = asyncio.run(collect(svc.stream_chat(None, "怎么退货？")))
+
+    cit_events = [e for e in ev if e["type"] == "citations"]
+    assert len(cit_events) == 1
+    assert cit_events[0]["citations"] == citations
+    assert "".join(e["content"] for e in ev if e["type"] == "token") == "根据证据，7天无理由退货。"
+    assert ev[-1]["type"] == "done"
+    assert fake.structured_model is SelfCheckResult
+    assert fake.structured_method == "function_calling"
+
+    with sqlite_session_local() as s:
+        rows = s.query(Message).order_by(Message.id).all()
+        tool_rows = [m for m in rows if m.role == "tool"]
+        assert len(tool_rows) == 1
+        assert tool_rows[0].content == evidence
+
+
+def test_query_faq_self_check_failure_refuses_and_logs(sqlite_session_local):
+    fake = FakeLLM(
+        reply="",
+        tool_calls=[{"name": "query_faq", "args": {"keyword": "运费"}, "id": "call_1"}],
+        chunks=[],
+    )
+    fake.self_check_result = SelfCheckResult(sufficient=False, reason="缺运费")
+    svc = _json_faq_service(
+        fake, '{"refused": false, "evidence": "[1] 运费: 满99包邮", "citations": []}'
+    )
+
+    ev = asyncio.run(collect(svc.stream_chat(None, "退货运费谁出")))
+
+    assert [e["content"] for e in ev if e["type"] == "token"] == [REFUSAL_TOKEN]
+    assert [e for e in ev if e["type"] == "citations"]  # citations still emitted pre-check
+    assert ev[-1]["type"] == "done"
+
+    with sqlite_session_local() as s:
+        rows = s.query(LowConfidenceQuestion).all()
+        assert len(rows) == 1
+        assert rows[0].source == "self_check"
+        assert rows[0].reason == "缺运费"
+        assert rows[0].raw_question == "退货运费谁出"
+
+
+def test_query_faq_retrieval_refusal_logs_retrieval_low_conf(sqlite_session_local):
+    fake = FakeLLM(
+        reply="",
+        tool_calls=[{"name": "query_faq", "args": {"keyword": "外星人"}, "id": "call_1"}],
+        chunks=[],
+    )
+    svc = _json_faq_service(fake, '{"refused": true, "evidence": "", "citations": []}')
+
+    ev = asyncio.run(collect(svc.stream_chat(None, "有外星人吗")))
+
+    assert [e["content"] for e in ev if e["type"] == "token"] == [REFUSAL_TOKEN]
+    assert not [e for e in ev if e["type"] == "citations"]
+    assert ev[-1]["type"] == "done"
+
+    with sqlite_session_local() as s:
+        rows = s.query(LowConfidenceQuestion).all()
+        assert len(rows) == 1
+        assert rows[0].source == "retrieval_low_conf"
+        assert rows[0].reason is None
+        assert rows[0].raw_question == "有外星人吗"

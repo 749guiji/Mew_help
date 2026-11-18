@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
@@ -10,10 +11,13 @@ from app.core.llm import get_llm
 from app.db import SessionLocal
 from app.db.models import Conversation, Message
 from app.prompts.system import build_chat_messages
+from app.services.generation_quality import log_low_confidence, self_check
 from app.services.history import trim_history
 from app.tools import ALL_TOOLS
 from app.tools.context import current_conversation_id
 from app.tools.executor import ToolExecutor
+
+REFUSAL_TOKEN = "抱歉，我目前的知识库中没有足够信息回答您的问题，已为您记录并转人工处理。"
 
 
 class ChatService:
@@ -111,6 +115,7 @@ class ChatService:
                 messages.append(ai_msg)
 
                 results: list[tuple[dict, str]] = []
+                refusal_text: str | None = None
                 token = current_conversation_id.set(conv_id)
                 try:
                     for tc in ai_msg.tool_calls:
@@ -118,6 +123,51 @@ class ChatService:
                         result = await self._executor.execute(tc["name"], tc["args"])
                         status = "error" if result.startswith("[工具错误]") else "done"
                         yield {"type": "tool", "name": tc["name"], "status": status}
+
+                        parsed = None
+                        if tc["name"] == "query_faq":
+                            try:
+                                parsed = json.loads(result)
+                            except (json.JSONDecodeError, TypeError):
+                                parsed = None
+
+                        if parsed is not None and parsed.get("refused") is True:
+                            # Retrieval refused: no ToolMessage, canned refusal,
+                            # log into the low-confidence pool, skip convergence.
+                            if refusal_text is None:
+                                yield {"type": "token", "content": REFUSAL_TOKEN}
+                                refusal_text = REFUSAL_TOKEN
+                            with SessionLocal() as s:
+                                log_low_confidence(
+                                    s,
+                                    conversation_id=conv_id,
+                                    raw_question=message,
+                                    source="retrieval_low_conf",
+                                    reason=None,
+                                )
+                            continue
+
+                        if parsed is not None and parsed.get("refused") is False:
+                            citations = parsed.get("citations") or []
+                            yield {"type": "citations", "citations": citations}
+                            evidence = parsed.get("evidence") or ""
+                            check = self_check(self._llm, message, evidence)
+                            if not check.sufficient:
+                                if refusal_text is None:
+                                    yield {"type": "token", "content": REFUSAL_TOKEN}
+                                    refusal_text = REFUSAL_TOKEN
+                                with SessionLocal() as s:
+                                    log_low_confidence(
+                                        s,
+                                        conversation_id=conv_id,
+                                        raw_question=message,
+                                        source="self_check",
+                                        reason=check.reason,
+                                    )
+                                continue
+                            # Sufficient: feed the evidence text (not the JSON).
+                            result = evidence
+
                         results.append((tc, result))
                         messages.append(
                             ToolMessage(
@@ -129,30 +179,35 @@ class ChatService:
                 finally:
                     current_conversation_id.reset(token)
 
-                self._save_message(conv_id, role="user", content=message)
-                self._save_message(
-                    conv_id,
-                    role="assistant",
-                    content=None,
-                    tool_calls=ai_msg.tool_calls,
-                )
-                for tc, result in results:
+                if refusal_text is not None:
+                    self._save_message(conv_id, role="user", content=message)
+                    self._save_message(conv_id, role="assistant", content=refusal_text)
+                    reply = refusal_text
+                else:
+                    self._save_message(conv_id, role="user", content=message)
                     self._save_message(
-                        conv_id, role="tool", content=result, tool_call_id=tc["id"]
+                        conv_id,
+                        role="assistant",
+                        content=None,
+                        tool_calls=ai_msg.tool_calls,
                     )
+                    for tc, result in results:
+                        self._save_message(
+                            conv_id, role="tool", content=result, tool_call_id=tc["id"]
+                        )
 
-                # Final convergence stream uses the UNBOUND model so the model
-                # cannot trigger a second tool call in the same turn.
-                reply_parts: list[str] = []
-                async for chunk in self._llm.astream(messages):
-                    content = chunk.content
-                    if not content:
-                        continue
-                    reply_parts.append(content)
-                    yield {"type": "token", "content": content}
-                reply = "".join(reply_parts)
+                    # Final convergence stream uses the UNBOUND model so the model
+                    # cannot trigger a second tool call in the same turn.
+                    reply_parts: list[str] = []
+                    async for chunk in self._llm.astream(messages):
+                        content = chunk.content
+                        if not content:
+                            continue
+                        reply_parts.append(content)
+                        yield {"type": "token", "content": content}
+                    reply = "".join(reply_parts)
 
-                self._save_message(conv_id, role="assistant", content=reply)
+                    self._save_message(conv_id, role="assistant", content=reply)
             else:
                 reply = ai_msg.content if ai_msg is not None else ""
                 self._save_message(conv_id, role="user", content=message)

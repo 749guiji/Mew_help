@@ -1,28 +1,47 @@
 """Database-backed tools (FAQ lookup and ticket creation)."""
 
+import json
 import logging
 import random
 from datetime import datetime
 
 from langchain_core.tools import tool
 
+from app.core.config import get_settings
 from app.db import SessionLocal
 from app.db.models import Ticket
 from app.kb.retrieval import default_retrieve
+from app.services.generation_quality import build_citations, format_evidence
 from app.tools.context import current_conversation_id
 
 logger = logging.getLogger(__name__)
 
 
 @tool
-def query_faq(keyword: str) -> str:
-    """查询售后政策、运费/邮费标准、退换货规则等常见问题(FAQ)的答案。当用户询问政策、规定、费用标准、规则等知识类问题时使用。"""
+def query_faq(keyword: str, category: str | None = None) -> str:
+    """查询售后政策、运费/邮费标准、退换货规则等常见问题(FAQ)的答案。当用户询问政策、规定、费用标准、规则等知识类问题时使用。
+
+    返回 JSON 字符串：{"refused": bool, "evidence": str, "citations": list}。
+    """
     try:
-        ans = default_retrieve(keyword)
-        return ans if ans else "未查到"
+        chunks = default_retrieve(keyword)
     except Exception as e:
         logger.warning("query_faq failed: %s", e)
-        return "未查到"
+        chunks = []
+
+    if not chunks or max(c.score for c in chunks) < get_settings().retrieval_threshold:
+        return json.dumps(
+            {"refused": True, "evidence": "", "citations": []}, ensure_ascii=False
+        )
+
+    return json.dumps(
+        {
+            "refused": False,
+            "evidence": format_evidence(chunks),
+            "citations": build_citations(chunks),
+        },
+        ensure_ascii=False,
+    )
 
 
 @tool

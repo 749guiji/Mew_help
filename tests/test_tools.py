@@ -1,5 +1,6 @@
 """Tests for the chapter 3 tool functions and registry."""
 
+import json
 import re
 
 import pytest
@@ -10,6 +11,7 @@ import app.tools.db_tools as db_tools
 from app.db import Base
 from app.db.models import Ticket
 from app.db.seed import seed_faq
+from app.kb.hybrid import ScoredChunk
 from app.tools import ALL_TOOLS, TOOL_REGISTRY
 from app.tools.context import current_conversation_id
 
@@ -52,16 +54,58 @@ def test_query_logistics_returns_str():
     assert isinstance(out, str) and "1002" in out
 
 
-def test_query_faq_no_match(monkeypatch):
+def _chunk(chunk_id, score, section_path, category, answer):
+    return ScoredChunk(
+        chunk_id=chunk_id,
+        score=score,
+        section_path=section_path,
+        category=category,
+        content_type="faq",
+        answer=answer,
+        questions="",
+    )
+
+
+def test_query_faq_empty_retrieval_refuses(monkeypatch):
+    monkeypatch.setattr(db_tools, "default_retrieve", lambda q: [])
+    out = json.loads(TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费"}))
+    assert out == {"refused": True, "evidence": "", "citations": []}
+
+
+def test_query_faq_none_retrieval_refuses(monkeypatch):
     monkeypatch.setattr(db_tools, "default_retrieve", lambda q: None)
-    out = TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费"})
-    assert "未查到" in out
+    out = json.loads(TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费"}))
+    assert out == {"refused": True, "evidence": "", "citations": []}
 
 
-def test_query_faq_match(monkeypatch):
-    monkeypatch.setattr(db_tools, "default_retrieve", lambda q: "7 天无理由退货")
-    out = TOOL_REGISTRY["query_faq"].invoke({"keyword": "退货"})
-    assert out == "7 天无理由退货"
+def test_query_faq_low_score_refuses(monkeypatch):
+    monkeypatch.setattr(
+        db_tools,
+        "default_retrieve",
+        lambda q: [_chunk(1, 0.1, "运费", "运费", "包邮")],
+    )
+    out = json.loads(TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费"}))
+    assert out == {"refused": True, "evidence": "", "citations": []}
+
+
+def test_query_faq_match_returns_json_contract(monkeypatch):
+    monkeypatch.setattr(
+        db_tools,
+        "default_retrieve",
+        lambda q: [_chunk(1, 0.9, "售后退款", "退款", "7天无理由退货")],
+    )
+    out = json.loads(TOOL_REGISTRY["query_faq"].invoke({"keyword": "退货"}))
+
+    assert out["refused"] is False
+    assert out["evidence"] == "[1] 售后退款: 7天无理由退货"
+    assert out["citations"] == [
+        {
+            "n": 1,
+            "chunk_id": 1,
+            "section_path": "售后退款",
+            "answer_snippet": "7天无理由退货",
+        }
+    ]
 
 
 def test_create_ticket(sqlite_session_local):

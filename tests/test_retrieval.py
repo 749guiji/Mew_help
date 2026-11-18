@@ -83,7 +83,9 @@ def test_default_retrieve_returns_scored_chunks(monkeypatch):
     assert out[0].score == 0.7
 
 
-def test_query_faq_degrades_to_not_found(monkeypatch):  # Review Focus #5
+def test_query_faq_degrades_to_refused(monkeypatch):  # Review Focus #5
+    import json
+
     import app.tools.db_tools as db_tools
     from app.tools import TOOL_REGISTRY
 
@@ -92,4 +94,5 @@ def test_query_faq_degrades_to_not_found(monkeypatch):  # Review Focus #5
         "default_retrieve",
         lambda q: (_ for _ in ()).throw(RuntimeError("milvus down")),
     )
-    assert TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费是多少"}) == "未查到"
+    out = json.loads(TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费是多少"}))
+    assert out == {"refused": True, "evidence": "", "citations": []}
