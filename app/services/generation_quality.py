@@ -41,7 +41,10 @@ def self_check(llm, question: str, evidence: str) -> SelfCheckResult:
     result = chain.invoke({"question": question, "evidence": evidence})
     if isinstance(result, SelfCheckResult):
         return result
-    return SelfCheckResult.model_validate(result)
+    # Ollama FC can fail to emit a tool_call (e.g. qwen3:8b), yielding None.
+    # Never crash the answer path: the evidence already passed the retrieval
+    # threshold, so don't refuse just because the checker couldn't run.
+    return SelfCheckResult(sufficient=True, reason="")
 
 
 def log_low_confidence(

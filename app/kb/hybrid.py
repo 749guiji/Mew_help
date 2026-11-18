@@ -22,6 +22,11 @@ from app.kb.milvus_store import Hit
 from app.kb.query_understanding import expand_synonyms, rewrite_query
 
 
+def _escape_filter_string(value: str) -> str:
+    """Escape ``value`` for a Milvus double-quoted string literal."""
+    return value.replace('"', '\\"')
+
+
 @dataclass
 class ScoredChunk:
     """One retrieved chunk with its rank score and MySQL backfilled fields."""
@@ -136,7 +141,9 @@ def retrieve_with_understanding(
     """Rewrite -> synonym expansion (BM25 only) -> hybrid+rerank -> filter."""
     u = rewrite_query(rewrite_llm, query)
     sparse_q = expand_synonyms(u.standard_question)
-    cat_filter = filter or (f'category == "{u.category}"' if u.category else None)
+    cat_filter = filter or (
+        f'category == "{_escape_filter_string(u.category)}"' if u.category else None
+    )
     return hybrid_rerank_retrieve(
         u.standard_question,
         session=session,

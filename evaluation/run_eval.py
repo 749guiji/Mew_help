@@ -147,7 +147,7 @@ def run_faithfulness(items, *, settings, limit=0, verbose=False) -> int:
             evidence = format_evidence(chunks)
             citations = build_citations(chunks)
             answer = _generate_answer(llm, query, evidence)
-            result = judge_faithfulness(llm, query, answer, citations)
+            result = judge_faithfulness(llm, query, answer, evidence)
         except Exception as exc:  # noqa: BLE001 - keep the long eval going
             errors += 1
             print(f"  [error] {eval_id} [{bucket}] {query}: {exc!r}", flush=True)

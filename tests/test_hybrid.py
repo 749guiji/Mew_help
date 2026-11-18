@@ -235,6 +235,27 @@ def test_filter_passes_through_to_store(session):
     assert store.calls[2][4] == 'category == "x"'  # hybrid_search (filter is index 4)
 
 
+def test_retrieve_with_understanding_escapes_quotes_in_category(session):
+    _seed(session)
+    store = FakeStore(hybrid=[_hit(1, 0.9)])
+    embedder = FakeEmbedder({"退款": [1.0]})
+    reranker = FakeReranker([0.8])
+    llm = FakeRewriteLLM(
+        QueryUnderstanding(standard_question="退款", category='退"款"')
+    )
+
+    retrieve_with_understanding(
+        "q",
+        session=session,
+        store=store,
+        embedder=embedder,
+        reranker=reranker,
+        rewrite_llm=llm,
+    )
+
+    assert store.calls[0][4] == 'category == "退\\"款\\""'
+
+
 def test_retrieve_with_understanding_filter_precedence(session):
     _seed(session)
     store = FakeStore(hybrid=[_hit(1, 0.9)])

@@ -43,6 +43,9 @@ class MilvusStore:
 
     _OUTPUT_FIELDS = ["text", "category", "content_type", "section_path"]
 
+    # ch04 schema fields; the old ch03 collection only had ``id`` + ``vector``.
+    _REQUIRED_FIELDS = ("text", "sparse")
+
     def __init__(self, uri: str, collection: str = "knowledge", dim: int = 1024):
         # Import lazily: ``pymilvus`` calls ``load_dotenv()`` at import time,
         # which leaks ``.env`` values into ``os.environ`` and can disturb other
@@ -70,6 +73,7 @@ class MilvusStore:
             # in "released" state; load it so search works. Fresh collections
             # are searchable after upsert without an explicit load.
             self.client.load_collection(self.collection)
+            self._ensure_ch04_schema()
             return
 
         schema = self.client.create_schema(auto_id=False)
@@ -120,6 +124,24 @@ class MilvusStore:
             schema=schema,
             index_params=index_params,
         )
+
+    def _ensure_ch04_schema(self) -> None:
+        """Fail fast when an existing collection predates the ch04 BM25 schema.
+
+        The old ch03 collection carried only ``id`` + ``vector``; querying it
+        with ``search_sparse`` / ``hybrid_search`` would fail later with an
+        opaque Milvus error. Detect the missing fields up front and tell the
+        operator how to rebuild.
+        """
+        desc = self.client.describe_collection(self.collection)
+        fields = {f["name"] for f in desc.get("fields", [])}
+        missing = [name for name in self._REQUIRED_FIELDS if name not in fields]
+        if missing:
+            raise RuntimeError(
+                f"Milvus collection {self.collection!r} uses the old ch03 schema "
+                f"(missing fields: {', '.join(missing)}). Rebuild it with: "
+                "python -m app.jobs.ingest_docs --rebuild"
+            )
 
     def drop_collection(self) -> None:
         """Drop the collection if it exists (used by ``--rebuild``)."""

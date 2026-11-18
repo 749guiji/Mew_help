@@ -35,18 +35,30 @@ class FakeLLM:
 
 
 def test_judge_faithfulness_passthrough_and_function_calling():
-    llm = FakeLLM({"faithful": False, "reason": "声称退款24小时到账"})
+    llm = FakeLLM(FaithfulnessResult(faithful=False, reason="声称退款24小时到账"))
 
     out = judge_faithfulness(
         llm,
         "退款什么时候到账",
         "一般24小时内到账",
-        [{"n": 1, "chunk_id": 17}],
+        "[1] 售后退款: 7天无理由",
     )
 
     assert isinstance(out, FaithfulnessResult)
     assert out.faithful is False
     assert out.reason == "声称退款24小时到账"
+    assert llm.called_model is FaithfulnessResult
+    assert llm.called_method == "function_calling"
+
+
+def test_judge_faithfulness_falls_back_when_chain_returns_none():
+    llm = FakeLLM(None)
+
+    out = judge_faithfulness(llm, "退款什么时候到账", "一般24小时内到账", "证据")
+
+    assert isinstance(out, FaithfulnessResult)
+    assert out.faithful is True
+    assert out.reason == ""
     assert llm.called_model is FaithfulnessResult
     assert llm.called_method == "function_calling"
 

@@ -48,6 +48,22 @@ def test_ensure_collection_schema_has_sparse_and_bm25_function(tmp_path):
     assert "text_bm25" in functions
 
 
+def test_ensure_collection_rejects_old_ch03_schema(tmp_path):
+    """A persisted ch03 collection (id + vector, no sparse/text) must fail fast."""
+    from pymilvus import DataType
+
+    store = MilvusStore(str(tmp_path / "old.db"), dim=2)
+    schema = store.client.create_schema(auto_id=False)
+    schema.add_field("id", DataType.INT64, is_primary=True)
+    schema.add_field("vector", DataType.FLOAT_VECTOR, dim=2)
+    index_params = store.client.prepare_index_params()
+    index_params.add_index(field_name="vector", index_type="FLAT", metric_type="COSINE")
+    store.client.create_collection("knowledge", schema=schema, index_params=index_params)
+
+    with pytest.raises(RuntimeError, match="ingest_docs --rebuild"):
+        store.ensure_collection()
+
+
 def test_chinese_analyzer_raises(tmp_path):
     from pymilvus import DataType, Function, FunctionType, MilvusClient
     from pymilvus.exceptions import MilvusException

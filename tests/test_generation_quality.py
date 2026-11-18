@@ -58,13 +58,25 @@ def _chunk(chunk_id, score, section_path, category, answer):
 
 
 def test_self_check_passthrough_and_function_calling():
-    llm = FakeLLM({"sufficient": False, "reason": "缺运费"})
+    llm = FakeLLM(SelfCheckResult(sufficient=False, reason="缺运费"))
 
     out = self_check(llm, "退货运费谁出", "证据内容")
 
     assert isinstance(out, SelfCheckResult)
     assert out.sufficient is False
     assert out.reason == "缺运费"
+    assert llm.called_model is SelfCheckResult
+    assert llm.called_method == "function_calling"
+
+
+def test_self_check_falls_back_when_chain_returns_none():
+    llm = FakeLLM(None)
+
+    out = self_check(llm, "退货运费谁出", "证据内容")
+
+    assert isinstance(out, SelfCheckResult)
+    assert out.sufficient is True
+    assert out.reason == ""
     assert llm.called_model is SelfCheckResult
     assert llm.called_method == "function_calling"
 

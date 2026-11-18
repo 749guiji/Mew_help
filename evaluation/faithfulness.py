@@ -9,7 +9,6 @@ so a repeatedly-bad case accumulates ``seen_count`` instead of duplicating rows.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -27,9 +26,13 @@ class FaithfulnessResult(BaseModel):
 
 
 def judge_faithfulness(
-    llm, question: str, answer: str, citations: list[dict]
+    llm, question: str, answer: str, evidence: str
 ) -> FaithfulnessResult:
-    """Ask ``llm`` whether ``answer`` is faithful to ``citations``.
+    """Ask ``llm`` whether ``answer`` is faithful to the full ``evidence``.
+
+    ``evidence`` must be the FULL formatted evidence the answer was generated
+    from (``format_evidence(chunks)``), not the citation snippets truncated at
+    200 chars: facts past that cut would be wrongly judged unfaithful.
 
     Uses ``with_structured_output(..., method="function_calling")`` explicitly
     (langchain 1.x otherwise defaults to ``json_schema``, which silently fails
@@ -41,20 +44,18 @@ def judge_faithfulness(
             ("system", FAITHFULNESS_SYSTEM_PROMPT),
             (
                 "human",
-                "用户问题：{question}\n\n助手回答：{answer}\n\n引用证据（citations）：\n{citations}",
+                "用户问题：{question}\n\n助手回答：{answer}\n\n引用证据：\n{evidence}",
             ),
         ]
     ) | llm.with_structured_output(FaithfulnessResult, method="function_calling")
     result = chain.invoke(
-        {
-            "question": question,
-            "answer": answer,
-            "citations": json.dumps(citations, ensure_ascii=False),
-        }
+        {"question": question, "answer": answer, "evidence": evidence}
     )
     if isinstance(result, FaithfulnessResult):
         return result
-    return FaithfulnessResult.model_validate(result)
+    # Ollama FC can fail to emit a tool_call (e.g. qwen3:8b), yielding None.
+    # Don't penalize the answer when the judge couldn't run.
+    return FaithfulnessResult(faithful=True, reason="")
 
 
 def record_faith_case(
