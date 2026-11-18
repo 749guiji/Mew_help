@@ -9,6 +9,7 @@ receive relevance scores in ``[0, 1]``.
 
 from __future__ import annotations
 
+import inspect
 import math
 
 from app.core.config import get_settings
@@ -17,6 +18,19 @@ from app.core.config import get_settings
 def sigmoid(x: float) -> float:
     """Map a raw logit to a probability in ``(0, 1)``."""
     return 1.0 / (1.0 + math.exp(-x))
+
+
+def _accepts_torch_dtype(cross_encoder_cls) -> bool:
+    """Return whether the constructor accepts a ``torch_dtype`` keyword.
+
+    Only pass ``torch_dtype=torch.float16`` when the installed API can actually
+    forward it (an explicit parameter or a ``**kwargs`` passthrough), so a real
+    misconfiguration is never masked by a fallback.
+    """
+    params = inspect.signature(cross_encoder_cls.__init__).parameters
+    return "torch_dtype" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
 
 
 class Reranker:
@@ -42,16 +56,12 @@ class Reranker:
         """Construct the real ``CrossEncoder`` (imported lazily)."""
         from sentence_transformers import CrossEncoder
 
-        try:
-            if self.use_fp16:
-                import torch
+        kwargs: dict = {"device": "cpu"}
+        if self.use_fp16 and _accepts_torch_dtype(CrossEncoder):
+            import torch
 
-                return CrossEncoder(self.model_name, device="cpu", torch_dtype=torch.float16)
-            return CrossEncoder(self.model_name, device="cpu")
-        except TypeError:
-            # Older/other CrossEncoder signatures may not accept ``torch_dtype``;
-            # fall back to a plain CPU model rather than failing to load.
-            return CrossEncoder(self.model_name, device="cpu")
+            kwargs["torch_dtype"] = torch.float16
+        return CrossEncoder(self.model_name, **kwargs)
 
     def rerank(self, query: str, docs: list[str]) -> list[float]:
         """Return one sigmoid'd relevance score per doc, in ``[0, 1]``."""

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.kb.reranker import Reranker, sigmoid
+from app.kb.reranker import Reranker, _accepts_torch_dtype, sigmoid
 
 
 class FakeRerankModel:
@@ -65,3 +65,21 @@ def test_module_import_does_not_import_torch_or_sentence_transformers():
         "assert 'sentence_transformers' not in sys.modules"
     )
     subprocess.run([sys.executable, "-c", code], cwd=root, check=True)
+
+
+def test_accepts_torch_dtype_gates_on_constructor_signature():
+    class ExplicitParam:
+        def __init__(self, torch_dtype=None):
+            pass
+
+    class ViaKwargs:
+        def __init__(self, **kwargs):
+            pass
+
+    class NoSupport:
+        def __init__(self, device=None):
+            pass
+
+    assert _accepts_torch_dtype(ExplicitParam) is True
+    assert _accepts_torch_dtype(ViaKwargs) is True
+    assert _accepts_torch_dtype(NoSupport) is False
