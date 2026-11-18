@@ -6,7 +6,7 @@ from app.tools import TOOL_REGISTRY
 
 
 class ToolExecutor:
-    def __init__(self, registry=None, timeout: float = 30.0, retries: int = 2):
+    def __init__(self, registry=None, timeout: float = 120.0, retries: int = 2):
         self.registry = registry if registry is not None else TOOL_REGISTRY
         self.timeout = timeout
         self.retries = retries

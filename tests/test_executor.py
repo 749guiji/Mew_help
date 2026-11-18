@@ -75,7 +75,7 @@ def test_execute_timeout_returns_error_string():
 def test_default_registry_is_tool_registry():
     ex = ToolExecutor()
     assert ex.registry is TOOL_REGISTRY
-    assert ex.timeout == 30.0
+    assert ex.timeout == 120.0
     assert ex.retries == 2
 
 

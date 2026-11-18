@@ -56,7 +56,10 @@ class Reranker:
         """Construct the real ``CrossEncoder`` (imported lazily)."""
         from sentence_transformers import CrossEncoder
 
-        kwargs: dict = {"device": "cpu"}
+        # Load from the local HF cache only. The model is pre-downloaded by the
+        # setup step; resolving the revision online hits hf-mirror's API rate
+        # limit (429) and its retry backoff blows past the tool timeout.
+        kwargs: dict = {"device": "cpu", "local_files_only": True}
         if self.use_fp16 and _accepts_torch_dtype(CrossEncoder):
             import torch
 
