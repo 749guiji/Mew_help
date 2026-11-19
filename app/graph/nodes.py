@@ -34,3 +34,21 @@ def classify_intent(llm, query: str) -> str:
         if intent in text:
             return intent
     return "闲聊"
+
+
+def gate_pass(score: float | None, threshold: float) -> bool:
+    """Confidence gate: pass only when a retrieval score meets the threshold."""
+    return score is not None and score >= threshold
+
+
+def retrieve_node(state) -> dict:
+    """知识检索:调 ch04 的 default_retrieve 取 Top-K,填 retrieval_chunks/score."""
+    from app.kb.retrieval import default_retrieve
+
+    chunks = default_retrieve(state["resolved_query"])
+    score = max((c.score for c in chunks), default=None) if chunks else None
+    return {
+        "retrieval_chunks": chunks,
+        "retrieval_score": score,
+        "visited": ["retrieve"],
+    }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
@@ -24,4 +25,4 @@ class GraphState(TypedDict, total=False):
     retrieval_score: float | None
     confidence_pass: bool | None
     handoff_suggestions: list[str]
-    visited: list[str]
+    visited: Annotated[list[str], operator.add]
