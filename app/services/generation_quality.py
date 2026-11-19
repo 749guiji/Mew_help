@@ -67,8 +67,21 @@ def log_low_confidence(
     session.commit()
 
 
+def reorder_for_generation(chunks: list[ScoredChunk]) -> list[ScoredChunk]:
+    """Reorder so the most relevant chunks sit at both ends (Lost-in-the-Middle).
+
+    For ``len <= 2`` the list is returned unchanged. Otherwise the front takes
+    the even-indexed chunks and the back takes the odd-indexed ones in reverse,
+    so rank #1 stays first and rank #2 moves to the very end.
+    """
+    if len(chunks) <= 2:
+        return list(chunks)
+    return chunks[0::2] + chunks[1::2][::-1]
+
+
 def format_evidence(chunks: list[ScoredChunk]) -> str:
     """Render numbered evidence lines: ``[1] {section_path or category}: {answer}``."""
+    chunks = reorder_for_generation(chunks)
     lines = []
     for i, chunk in enumerate(chunks, start=1):
         section = chunk.section_path or chunk.category
@@ -78,6 +91,7 @@ def format_evidence(chunks: list[ScoredChunk]) -> str:
 
 def build_citations(chunks: list[ScoredChunk]) -> list[dict]:
     """Build the citation payload surfaced to the client via the SSE event."""
+    chunks = reorder_for_generation(chunks)
     return [
         {
             "n": i,

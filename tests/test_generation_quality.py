@@ -11,6 +11,7 @@ from app.services.generation_quality import (
     build_citations,
     format_evidence,
     log_low_confidence,
+    reorder_for_generation,
     self_check,
 )
 
@@ -126,3 +127,37 @@ def test_build_citations_shape():
             "answer_snippet": "x" * 200,
         }
     ]
+
+
+def test_reorder_places_top_two_at_ends():
+    chunks = [_chunk(i, 1.0 - i * 0.1, f"s{i}", "退款", f"答案{i}") for i in range(1, 6)]
+
+    ordered = reorder_for_generation(chunks)
+
+    assert [c.chunk_id for c in ordered] == [1, 3, 5, 4, 2]
+
+
+def test_reorder_leaves_two_or_fewer_unchanged():
+    assert reorder_for_generation([]) == []
+
+    one = [_chunk(1, 0.9, "s1", "退款", "a")]
+    assert [c.chunk_id for c in reorder_for_generation(one)] == [1]
+
+    two = [_chunk(1, 0.9, "s1", "退款", "a"), _chunk(2, 0.8, "s2", "退款", "b")]
+    assert [c.chunk_id for c in reorder_for_generation(two)] == [1, 2]
+
+
+def test_format_evidence_and_citations_share_numbering():
+    chunks = [
+        _chunk(1, 0.9, "s1", "退款", "答案1"),
+        _chunk(2, 0.8, "s2", "退款", "答案2"),
+        _chunk(3, 0.7, "s3", "退款", "答案3"),
+    ]
+
+    evidence = format_evidence(chunks)
+    citations = build_citations(chunks)
+
+    # Reorder → [chunk 1, chunk 3, chunk 2]; citation n must follow the same order.
+    assert evidence.splitlines()[0].startswith("[1]")
+    assert [c["chunk_id"] for c in citations] == [1, 3, 2]
+    assert [c["n"] for c in citations] == [1, 2, 3]
