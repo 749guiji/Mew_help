@@ -22,22 +22,13 @@ from app.kb.chunker import Chunk, chunk_markdown
 from app.kb.embedding import Embedder
 from app.kb.ingest import insert_chunks, vectorize_pending
 from app.kb.retrieval import _get_store, default_retrieve
+from app.kb.sources import content_type_from_path, list_kb_materials
 
 router = APIRouter()
 
 # kb.py is at app/api/routes/kb.py -> parents[3] is the repo root.
 STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 KNOWLEDGE_DIR = Path("knowledge")
-
-
-def _content_type_from_path(path: Path) -> str:
-    """Derive content_type from a file name (same rule as ingest_docs)."""
-    name = path.name.lower()
-    if "faq" in name:
-        return "faq"
-    if "policy" in name or "退货" in name:
-        return "policy"
-    return "manual"
 
 
 class KBChunkCreate(BaseModel):
@@ -74,16 +65,10 @@ def kb_page() -> FileResponse:
 
 @router.get("/api/kb/materials")
 def list_materials() -> list[dict]:
-    out = []
-    for path in sorted(KNOWLEDGE_DIR.glob("*.md")):
-        out.append(
-            {
-                "name": path.name,
-                "content_type": _content_type_from_path(path),
-                "chars": len(path.read_text(encoding="utf-8")),
-            }
-        )
-    return out
+    return [
+        {"name": m.name, "content_type": m.content_type, "chars": m.chars}
+        for m in list_kb_materials()
+    ]
 
 
 @router.get("/api/kb/preview")
@@ -97,7 +82,7 @@ def preview(path: str) -> list[dict]:
     text = target.read_text(encoding="utf-8")
     chunks = chunk_markdown(
         text,
-        _content_type_from_path(target),
+        content_type_from_path(target),
         max_chars=settings.chunk_max_chars,
         overlap=settings.chunk_overlap_chars,
     )

@@ -23,17 +23,7 @@ from app.db.models import KnowledgeChunk
 from app.kb.embedding import Embedder
 from app.kb.ingest import ingest_document, migrate_faq, rebuild, vectorize_pending
 from app.kb.milvus_store import MilvusStore
-
-_KNOWLEDGE_DIR = Path("knowledge")
-
-
-def _content_type_from_path(path: Path) -> str:
-    name = path.name.lower()
-    if "faq" in name:
-        return "faq"
-    if "policy" in name or "退货" in name:
-        return "policy"
-    return "manual"
+from app.kb.sources import list_kb_materials
 
 
 def _build_session_store_embedder():
@@ -93,20 +83,20 @@ def main(argv=None) -> int:
             return 1
 
         total = 0
-        for path in sorted(_KNOWLEDGE_DIR.glob("*.md")):
-            content_type = _content_type_from_path(path)
+        for material in list_kb_materials():
+            content_type = material.content_type
             ids = ingest_document(
                 session,
                 store,
                 embedder,
-                path.read_text(encoding="utf-8"),
+                material.path.read_text(encoding="utf-8"),
                 content_type,
                 max_chars=settings.chunk_max_chars,
                 overlap=settings.chunk_overlap_chars,
-                source=str(path),
+                source=str(material.path),
             )
             total += len(ids)
-            print(f"ingested {path} ({content_type}): {len(ids)} chunks")
+            print(f"ingested {material.path} ({content_type}): {len(ids)} chunks")
 
         migrated = migrate_faq(session, store, embedder)
         total += migrated
