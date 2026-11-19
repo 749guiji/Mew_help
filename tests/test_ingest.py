@@ -163,3 +163,9 @@ def test_find_duplicate_chunk_returns_existing_id(session):
     fp = chunk_fingerprint("怎么退", "七天无理由")
     assert find_duplicate_chunk(session, fp) is not None
     assert find_duplicate_chunk(session, chunk_fingerprint("怎么退", "别的内容")) is None
+
+
+def test_count_on_empty_collection(tmp_path):
+    store = MilvusStore(str(tmp_path / "empty.db"))
+    store.ensure_collection()
+    assert store.count() == 0
