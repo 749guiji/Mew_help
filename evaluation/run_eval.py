@@ -236,15 +236,24 @@ def run_answer_coverage(
     for name in strategy_names:
         if name == "hybrid_rerank" and not hybrid_rerank_ready:
             continue
-        ranked = run_strategy(
-            name,
-            items,
-            session=session,
-            store=store,
-            embedder=embedder,
-            reranker=reranker,
-            top_k=top_k,
-        )
+        try:
+            ranked = run_strategy(
+                name,
+                items,
+                session=session,
+                store=store,
+                embedder=embedder,
+                reranker=reranker,
+                top_k=top_k,
+            )
+        except Exception as exc:  # noqa: BLE001 - model load may fail at runtime
+            if name == "hybrid_rerank":
+                print(
+                    f"[skip] {name}: {exc!r} (reranker not ready; continuing)",
+                    flush=True,
+                )
+                continue
+            raise
         for item, chunks in zip(items, ranked):
             points = item["expect_points"]
             n = len(points)
