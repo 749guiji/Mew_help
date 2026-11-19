@@ -39,6 +39,10 @@ def test_reentrancy_rejected(monkeypatch, tmp_path):
 
     assert jobs.job_status("fake")["done"] is True
     assert jobs.start_job("fake") is not None  # finished -> can start again
+    for _ in range(200):  # let the second run finish so no thread outlives the test
+        if not jobs.job_status("fake")["running"]:
+            break
+        time.sleep(0.02)
 
 
 def test_job_log_tail_returns_tail(tmp_path, monkeypatch):
