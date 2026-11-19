@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api.routes import admin as admin_routes
 from app.api.routes import chat as chat_routes
 from app.api.routes import extract as extract_routes
 from app.api.routes import jobs as jobs_routes
@@ -26,6 +27,7 @@ def create_app(chat_service=None, extraction_service=None) -> FastAPI:
     app.state.chat_service = chat_service
     app.state.extraction_service = extraction_service
 
+    app.include_router(admin_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(extract_routes.router)
     app.include_router(jobs_routes.router)

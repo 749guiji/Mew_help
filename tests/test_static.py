@@ -39,3 +39,10 @@ def test_kb_script_served():
         r = c.get("/kb.js")
     assert r.status_code == 200
     assert "javascript" in r.headers["content-type"]
+
+
+def test_admin_script_served():
+    with TestClient(app) as c:
+        r = c.get("/admin.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]

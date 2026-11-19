@@ -234,3 +234,31 @@
   overflow: auto;
   margin-top: 8px;
 }
+
+.admin-nav {
+  display: flex;
+  gap: 8px;
+  padding: 0 22px;
+  margin-bottom: 12px;
+}
+
+.admin-nav a {
+  color: var(--brand);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff8ee;
+}
+
+.admin-nav a:hover {
+  background: var(--assistant-bubble);
+}
+
+.admin-cards {
+  padding: 0 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
