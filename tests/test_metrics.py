@@ -6,7 +6,7 @@ tests pin the exact arithmetic, including zero hits and out-of-range ``k``.
 
 import pytest
 
-from evaluation.metrics import mrr, recall_at_k
+from evaluation.metrics import evidence_coverage, mrr, recall_at_k
 
 
 def test_recall_full_hit():
@@ -65,3 +65,23 @@ def test_mrr_empty_hits():
 def test_mrr_multiple_ground_truth_takes_first_hit():
     # Only the earliest relevant rank counts for MRR.
     assert mrr([1, 2, 3], [2, 3]) == 0.5
+
+
+def test_evidence_coverage_all_points_found():
+    assert evidence_coverage(
+        ["满 99 元包邮，8 元基础运费"], ["满 99 元包邮", "8 元基础运费"]
+    ) == 1.0
+
+
+def test_evidence_coverage_partial():
+    assert evidence_coverage(
+        ["满 99 元包邮"], ["满 99 元包邮", "偏远地区额外加收"]
+    ) == 0.5
+
+
+def test_evidence_coverage_empty_points_is_zero():
+    assert evidence_coverage(["任意文本"], []) == 0.0
+
+
+def test_evidence_coverage_no_hits_is_zero():
+    assert evidence_coverage([], ["要点"]) == 0.0

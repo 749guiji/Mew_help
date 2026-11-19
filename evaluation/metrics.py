@@ -32,3 +32,18 @@ def mrr(hit_ids: list[int], ground_truth: list[int]) -> float:
         if chunk_id in gt:
             return 1.0 / rank
     return 0.0
+
+
+def evidence_coverage(hit_texts: list[str], expect_points: list[str]) -> float:
+    """Fraction of ``expect_points`` found verbatim in any retrieved hit text.
+
+    Mechanical, reproducible, LLM-free: a point counts as covered when it
+    appears as a substring somewhere in the concatenated ``hit_texts``. An
+    empty ``expect_points`` (or empty hits) yields ``0.0`` rather than a
+    divide-by-zero.
+    """
+    if not expect_points:
+        return 0.0
+    blob = "".join(hit_texts)
+    hits = sum(1 for p in expect_points if p and p in blob)
+    return hits / len(expect_points)
