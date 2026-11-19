@@ -62,6 +62,55 @@ function renderToolBadge(badgeEl, evt) {
   }
 }
 
+// 转人工 / 建工单两个独立按钮(后端只下建议,不自动执行)。
+function renderHandoff(suggestions, contentEl) {
+  if (!suggestions.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "handoff";
+  for (const s of suggestions) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "handoff-btn";
+    if (s === "转人工") {
+      btn.textContent = "转人工";
+      btn.addEventListener("click", () => {
+        wrap.innerHTML = "";
+        const done = document.createElement("div");
+        done.className = "handoff-done";
+        done.textContent = "已转接人工客服\n您好，我是客服小猫，请问有什么可以帮您的？";
+        wrap.appendChild(done);
+      });
+    } else if (s === "建工单") {
+      btn.textContent = "建工单";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const res = await fetch("/api/tickets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_id: state.sessionId,
+              description: "用户投诉工单",
+              ticket_type: "投诉",
+            }),
+          });
+          if (res.ok) {
+            const { ticket_no } = await res.json();
+            btn.textContent = "已建工单 " + ticket_no;
+          } else {
+            btn.textContent = "建工单失败";
+          }
+        } catch (err) {
+          btn.textContent = "建工单失败";
+        }
+      });
+    }
+    wrap.appendChild(btn);
+  }
+  contentEl.appendChild(wrap);
+  scrollToBottom();
+}
+
 // 把答案文本里的 [n] / ［n］ 转成可点的引用编号。
 function linkifyCitations(textSpan, citations) {
   const text = textSpan.textContent;
@@ -151,6 +200,8 @@ function dispatch(evt, ctx) {
     scrollToBottom();
   } else if (evt.type === "citations") {
     ctx.citations = evt.citations || [];
+  } else if (evt.type === "handoff") {
+    renderHandoff(evt.suggestions || [], ctx.contentEl);
   } else if (evt.type === "error") {
     ctx.textSpan.textContent += "\n[出错了] " + evt.message;
     scrollToBottom();
@@ -194,7 +245,7 @@ async function send() {
   cursor.className = "cursor";
   contentEl.appendChild(cursor);
 
-  const ctx = { textSpan, badgeEl, citations: [] };
+  const ctx = { textSpan, badgeEl, citations: [], contentEl };
 
   setStreaming(true);
   try {

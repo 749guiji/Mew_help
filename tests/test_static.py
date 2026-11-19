@@ -25,6 +25,14 @@ def test_script_served():
     assert "javascript" in r.headers["content-type"]
 
 
+def test_chat_script_has_handoff_buttons():
+    with TestClient(app) as c:
+        r = c.get("/app.js")
+    assert r.status_code == 200
+    assert "转人工" in r.text
+    assert "建工单" in r.text
+
+
 def test_kb_page_served_with_blocks():
     with TestClient(app) as c:
         r = c.get("/kb")

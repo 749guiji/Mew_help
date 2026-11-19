@@ -8,6 +8,7 @@ from app.api.routes import chat as chat_routes
 from app.api.routes import extract as extract_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import kb as kb_routes
+from app.api.routes import tickets as tickets_routes
 from app.core.llm import get_llm
 from app.services.chat_service import ChatService
 from app.services.extraction_service import ExtractionService, build_extraction_chain
@@ -31,6 +32,7 @@ def create_app(chat_service=None, extraction_service=None) -> FastAPI:
     app.include_router(extract_routes.router)
     app.include_router(jobs_routes.router)
     app.include_router(kb_routes.router)
+    app.include_router(tickets_routes.router)
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
