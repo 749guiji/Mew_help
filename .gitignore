@@ -33,3 +33,6 @@ Thumbs.db
 # Milvus Lite / SQLite local data
 data/
 *.db
+
+# Job runner logs
+log/
