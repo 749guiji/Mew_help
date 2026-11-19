@@ -10,6 +10,19 @@ from app.graph.router import route_from_intent
 from app.graph.state import GraphState
 
 
+def _reset_node(state: GraphState) -> dict:
+    """清空上一轮的逐轮字段,避免 checkpointer 里的旧值漏到本轮。"""
+    return {
+        "resolved_query": "",
+        "intent": "",
+        "route": "",
+        "retrieval_chunks": [],
+        "retrieval_score": None,
+        "confidence_pass": None,
+        "handoff_suggestions": [],
+    }
+
+
 def _coref_node(state: GraphState) -> dict:
     return {
         "resolved_query": nodes.resolve_coref(state["raw_query"]),
@@ -32,6 +45,7 @@ def build_graph(checkpointer=None):
     monkeypatch them before building.
     """
     g = StateGraph(GraphState)
+    g.add_node("reset", _reset_node)
     g.add_node("coref", _coref_node)
     g.add_node("intent", _intent_node)
     g.add_node("retrieve", nodes.retrieve_node)
@@ -42,7 +56,8 @@ def build_graph(checkpointer=None):
     g.add_node("chitchat", nodes.chitchat_node)
     g.add_node("log", nodes.log_node)
 
-    g.add_edge(START, "coref")
+    g.add_edge(START, "reset")
+    g.add_edge("reset", "coref")
     g.add_edge("coref", "intent")
     g.add_conditional_edges(
         "intent",

@@ -17,13 +17,32 @@ from app.services.chat_service import ChatService
 
 
 class FakeGraph:
-    def __init__(self, result):
-        self.result = result
+    """Stateful fake: accumulates messages across turns (like a checkpointer)."""
+
+    def __init__(self, result=None):
+        self.result = result or {}
         self.inputs = []
+        self._messages = []
+
+    async def aget_state(self, config=None):
+        class _Snapshot:
+            def __init__(self, values):
+                self.values = values
+
+        return _Snapshot({"messages": list(self._messages)})
 
     async def ainvoke(self, input, config=None):
         self.inputs.append((input, config))
-        return self.result
+        for m in input.get("messages", []):
+            if isinstance(m, tuple):
+                self._messages.append(HumanMessage(content=m[1]))
+            else:
+                self._messages.append(m)
+        for m in self.result.get("messages", []):
+            self._messages.append(m)
+        state = dict(self.result)
+        state["messages"] = list(self._messages)
+        return state
 
 
 @pytest.fixture(autouse=True)
@@ -142,3 +161,19 @@ def test_persists_user_and_assistant(sqlite_session_local):
         assert s.query(Conversation).count() == 1
         rows = s.query(Message).order_by(Message.id).all()
         assert [(m.role, m.content) for m in rows] == [("user", "问题"), ("assistant", "答案")]
+
+
+def test_second_turn_has_no_stale_handoff_or_citations(sqlite_session_local):
+    graph = FakeGraph()
+    graph.result = {"messages": [AIMessage(content="安抚")], "handoff_suggestions": ["转人工", "建工单"]}
+    svc = ChatService(graph=graph)
+    e1 = asyncio.run(collect(svc.stream_chat(None, "我要投诉")))
+    assert [e for e in e1 if e["type"] == "handoff"]
+    sid = e1[0]["session_id"]
+
+    graph.result = {"messages": [AIMessage(content="您好呀")]}
+    e2 = asyncio.run(collect(svc.stream_chat(sid, "你好")))
+
+    assert not [e for e in e2 if e["type"] == "handoff"]
+    assert not [e for e in e2 if e["type"] == "citations"]
+    assert [e["content"] for e in e2 if e["type"] == "token"] == ["您好呀"]

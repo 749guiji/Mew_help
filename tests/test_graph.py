@@ -77,3 +77,27 @@ def test_knowledge_fallback_on_low_score(monkeypatch):
 
     assert "fallback" in result["visited"]
     assert "agent" not in result["visited"]
+
+
+def test_two_turns_reset_per_turn_fields(monkeypatch):
+    graph = build_graph()
+    config = {"configurable": {"thread_id": "two-turn"}}
+
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "投诉")
+    r1 = asyncio.run(
+        graph.ainvoke(
+            {"messages": [("user", "我要投诉")], "raw_query": "我要投诉"},
+            config=config,
+        )
+    )
+    assert r1["handoff_suggestions"] == ["转人工", "建工单"]
+
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "闲聊")
+    r2 = asyncio.run(
+        graph.ainvoke(
+            {"messages": [("user", "你好")], "raw_query": "你好"},
+            config=config,
+        )
+    )
+
+    assert r2.get("handoff_suggestions") == []  # reset node 清掉了上一轮的 handoff

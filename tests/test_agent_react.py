@@ -19,6 +19,7 @@ class FakeLLM:
 
     async def ainvoke(self, messages):
         self.calls += 1
+        self.last_messages = list(messages)
         if self.responses:
             return self.responses.pop(0)
         return AIMessage(content="")
@@ -94,5 +95,18 @@ def test_missing_info_asks_user():
     assert llm.calls == 1
 
 
-def test_agent_tools_exclude_query_faq():
-    assert all(t.name != "query_faq" for t in AGENT_TOOLS)
+def test_agent_tools_exclude_query_faq_and_create_ticket():
+    assert all(t.name not in ("query_faq", "create_ticket") for t in AGENT_TOOLS)
+
+
+def test_token_budget_trims_history():
+    responses = [AIMessage(content="ok")]
+    llm = FakeLLM(responses)
+    executor = FakeExecutor()
+    long_history = [HumanMessage(content="x" * 100) for _ in range(10)]
+    state = {"messages": long_history}
+
+    asyncio.run(react_agent_node(state, llm=llm, executor=executor, token_budget=50))
+
+    # 历史被截断:收到的消息数远少于 11(system + 10 条)
+    assert len(llm.last_messages) <= 3

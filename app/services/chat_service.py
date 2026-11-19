@@ -89,15 +89,19 @@ class ChatService:
             conv_id = self._resolve_conversation(sid)
 
             graph = self._graph if self._graph is not None else _get_graph()
+            config = {"configurable": {"thread_id": sid}}
+            before = await graph.aget_state(config)
+            before_count = len(before.values.get("messages", []))
             result = await graph.ainvoke(
                 {"messages": [("user", message)], "raw_query": message},
-                config={"configurable": {"thread_id": sid}},
+                config=config,
             )
 
-            msgs = result.get("messages", [])
+            # 只取本轮新增的消息,避免回放历史轮次的工具徽章 / 旧答案
+            new_msgs = result.get("messages", [])[before_count:]
 
-            # 工具帧(Agent 已执行完的工具,回放给前端徽章)
-            for m in msgs:
+            # 工具帧(本轮 Agent 已执行完的工具,回放给前端徽章)
+            for m in new_msgs:
                 if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
                     for tc in m.tool_calls:
                         yield {"type": "tool", "name": tc["name"], "status": "done"}
@@ -109,9 +113,9 @@ class ChatService:
 
                 yield {"type": "citations", "citations": build_citations(chunks)}
 
-            # 答案帧(最后一个有内容的 AIMessage)
+            # 答案帧(本轮最后一个有内容的 AIMessage)
             answer = ""
-            for m in reversed(msgs):
+            for m in reversed(new_msgs):
                 if isinstance(m, AIMessage) and m.content:
                     answer = m.content
                     break
