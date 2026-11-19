@@ -39,7 +39,7 @@ from app.kb.hybrid import (  # noqa: E402
 )
 from app.kb.milvus_store import MilvusStore  # noqa: E402
 from app.kb.reranker import Reranker  # noqa: E402
-from evaluation.metrics import mrr, recall_at_k  # noqa: E402
+from evaluation.metrics import evidence_coverage, mrr, recall_at_k  # noqa: E402
 
 STRATEGIES = {
     "dense": dense_retrieve,
@@ -74,8 +74,9 @@ def load_eval_set(path: Path) -> list[dict]:
 
 
 def run_strategy(name, items, *, session, store, embedder, reranker, top_k):
+    """Run one strategy over ``items`` and return per-item ranked ``ScoredChunk`` lists."""
     fn = STRATEGIES[name]
-    ranked: list[list[int]] = []
+    ranked = []
     for item in items:
         query = item["query"]
         if name == "dense":
@@ -93,7 +94,7 @@ def run_strategy(name, items, *, session, store, embedder, reranker, top_k):
                 reranker=reranker,
                 top_k=top_k,
             )
-        ranked.append([c.chunk_id for c in chunks])
+        ranked.append(chunks)
     return ranked
 
 
@@ -200,6 +201,127 @@ def run_faithfulness(items, *, settings, limit=0, verbose=False) -> int:
     return 0
 
 
+def run_answer_coverage(
+    items,
+    *,
+    settings,
+    session,
+    store,
+    embedder,
+    reranker,
+    strategy_names,
+    top_k,
+    hybrid_rerank_ready,
+    limit=0,
+) -> int:
+    """Generation segment: per-strategy answer -> LLM coverage judge.
+
+    For each non-refuse item, retrieve via each strategy, generate an answer
+    from the numbered evidence, and ask ``judge_answer_coverage`` which of the
+    standard points the answer covers. Coverage is the fraction of valid
+    (0-based) points covered; a ``None`` judge result (FC miss) is skipped.
+    """
+    from app.core.llm import get_llm
+    from app.services.generation_quality import format_evidence
+    from evaluation.generation import judge_answer_coverage
+
+    llm = get_llm(settings)
+    items = [it for it in items if not it["should_refuse"]]
+    items = items[:limit] if limit else items
+
+    sums: dict[str, float] = defaultdict(float)
+    counts: dict[str, int] = defaultdict(int)
+    errors = 0
+
+    for name in strategy_names:
+        if name == "hybrid_rerank" and not hybrid_rerank_ready:
+            continue
+        ranked = run_strategy(
+            name,
+            items,
+            session=session,
+            store=store,
+            embedder=embedder,
+            reranker=reranker,
+            top_k=top_k,
+        )
+        for item, chunks in zip(items, ranked):
+            points = item["expect_points"]
+            n = len(points)
+            if n == 0:
+                continue
+            try:
+                answer = _generate_answer(llm, item["query"], format_evidence(chunks))
+                result = judge_answer_coverage(llm, item["query"], answer, points)
+            except Exception as exc:  # noqa: BLE001 - keep the long eval going
+                errors += 1
+                print(f"  [error] {item['id']} {item['query']}: {exc!r}", flush=True)
+                continue
+            if result is None:
+                errors += 1
+                continue
+            cov = len({i for i in result.covered if 0 <= i < n}) / n
+            sums[name] += cov
+            counts[name] += 1
+
+    print()
+    print("Answer coverage (generation segment, per strategy):")
+    for name in strategy_names:
+        if name == "hybrid_rerank" and not hybrid_rerank_ready:
+            continue
+        n = counts.get(name, 0)
+        if n:
+            print(f"  {name}: {sums[name] / n:.3f} ({n} items)")
+        else:
+            print(f"  {name}: n/a")
+    if errors:
+        print(f"  errors skipped: {errors}")
+    return 0
+
+
+def run_refusal(items, *, settings, limit=0) -> int:
+    """Refusal segment: ``should_refuse`` items must be refused, not answered.
+
+    Mirrors the production gate: no retrieved chunks, or ``self_check``
+    ``sufficient=False``, counts as a correct refusal.
+    """
+    from app.core.llm import get_llm
+    from app.kb.retrieval import default_retrieve
+    from app.services.generation_quality import format_evidence, self_check
+
+    llm = get_llm(settings)
+    items = [it for it in items if it["should_refuse"]]
+    items = items[:limit] if limit else items
+
+    refused = 0
+    total = 0
+    errors = 0
+    for item in items:
+        try:
+            chunks = default_retrieve(item["query"])
+            if not chunks:
+                refused += 1
+            else:
+                check = self_check(llm, item["query"], format_evidence(chunks))
+                if not check.sufficient:
+                    refused += 1
+        except Exception as exc:  # noqa: BLE001 - keep the long eval going
+            errors += 1
+            print(f"  [error] {item['id']} {item['query']}: {exc!r}", flush=True)
+            continue
+        total += 1
+
+    print()
+    print("Refusal rate (should_refuse items):")
+    if total:
+        print(f"  refused / total = {refused}/{total} = {refused / total:.3f}")
+    else:
+        print("  refused / total = 0/0")
+    if errors:
+        print(f"  errors skipped: {errors}")
+    return 0
+
+
 def _fmt(value: float) -> str:
     return f"{value:.3f}"
 
@@ -229,10 +351,20 @@ def main(argv=None) -> int:
         help="run the generation segment (hybrid_rerank answer -> faithfulness judge -> faith_cases)",
     )
     parser.add_argument(
+        "--answer-coverage",
+        action="store_true",
+        help="run the generation segment (per-strategy answer coverage judge)",
+    )
+    parser.add_argument(
+        "--refusal",
+        action="store_true",
+        help="run the refusal segment (should_refuse items must be refused)",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=0,
-        help="only run the first N eval items (0 = all; generation segment only)",
+        help="only run the first N eval items (0 = all; generation/refusal segments)",
     )
     args = parser.parse_args(argv)
 
@@ -257,6 +389,9 @@ def main(argv=None) -> int:
             items, settings=settings, limit=args.limit, verbose=args.verbose
         )
 
+    if args.refusal:
+        return run_refusal(items, settings=settings, limit=args.limit)
+
     store = MilvusStore(
         settings.milvus_uri,
         collection=settings.milvus_collection,
@@ -265,6 +400,21 @@ def main(argv=None) -> int:
     store.ensure_collection()
     embedder = Embedder(dim=settings.embedding_dim)
     reranker = Reranker(model_name=settings.rerank_model, use_fp16=settings.rerank_use_fp16)
+
+    if args.answer_coverage:
+        with SessionLocal() as session:
+            return run_answer_coverage(
+                items,
+                settings=settings,
+                session=session,
+                store=store,
+                embedder=embedder,
+                reranker=reranker,
+                strategy_names=strategy_names,
+                top_k=args.top_k,
+                hybrid_rerank_ready=hybrid_rerank_ready,
+                limit=args.limit,
+            )
 
     # metrics[(strategy, bucket)][metric] -> running sum; counts per (strategy, bucket)
     sums: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -294,19 +444,25 @@ def main(argv=None) -> int:
                     )
                     continue
                 raise
-            for item, hit_ids in zip(items, ranked):
-                gt = item["ground_truth_chunk_ids"]
+            for item, chunks in zip(items, ranked):
                 bucket = item["bucket"]
+                if bucket == "D_refuse":
+                    continue  # no ground truth; refused items only count toward refusal rate
+                hit_ids = [c.chunk_id for c in chunks]
+                gt = item["ground_truth_chunk_ids"]
                 key = (name, bucket)
                 counts[key] += 1
                 for k in ks:
                     sums[key][f"R@{k}"] += recall_at_k(hit_ids, gt, k)
                 sums[key]["MRR"] += mrr(hit_ids, gt)
+                sums[key]["EVCOV"] += evidence_coverage(
+                    [c.answer for c in chunks], item["expect_points"]
+                )
                 if args.verbose:
                     print(f"  {item['id']} [{bucket}] {item['query']} -> {hit_ids} (gt {gt})")
 
     # Print a per-bucket comparison table.
-    header = ["strategy", "bucket", "n"] + [f"R@{k}" for k in ks] + ["MRR"]
+    header = ["strategy", "bucket", "n"] + [f"R@{k}" for k in ks] + ["MRR", "EVCOV"]
     print()
     print(" | ".join(f"{h:>14}" for h in header))
     print("-+-".join("-" * 14 for _ in header))
@@ -322,6 +478,7 @@ def main(argv=None) -> int:
             for k in ks:
                 row.append(_fmt(sums[key][f"R@{k}"] / n))
             row.append(_fmt(sums[key]["MRR"] / n))
+            row.append(_fmt(sums[key]["EVCOV"] / n))
             print(" | ".join(f"{cell:>14}" for cell in row))
         # Per-strategy overall row.
         total = sum(counts[(name, b)] for b in BUCKETS)
@@ -330,6 +487,7 @@ def main(argv=None) -> int:
             for k in ks:
                 overall.append(_fmt(sum(sums[(name, b)][f"R@{k}"] for b in BUCKETS) / total))
             overall.append(_fmt(sum(sums[(name, b)]["MRR"] for b in BUCKETS) / total))
+            overall.append(_fmt(sum(sums[(name, b)]["EVCOV"] for b in BUCKETS) / total))
             print(" | ".join(f"{cell:>14}" for cell in [name, "ALL", str(total)] + overall))
         print()
 
