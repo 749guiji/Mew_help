@@ -48,7 +48,7 @@ STRATEGIES = {
     "hybrid_rerank": hybrid_rerank_retrieve,
 }
 
-BUCKETS = ("A_policy", "B_model", "C_colloquial", "E_multi")
+BUCKETS = ("A_policy", "B_model", "C_colloquial", "D_refuse", "E_multi")
 
 
 def _is_hybrid_rerank_available() -> bool:
