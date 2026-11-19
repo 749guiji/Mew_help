@@ -52,3 +52,70 @@ def retrieve_node(state) -> dict:
         "retrieval_score": score,
         "visited": ["retrieve"],
     }
+
+
+def gate_node(state) -> dict:
+    """置信度闸:按检索得分阈值判定是否进 Agent。"""
+    from app.core.config import get_settings
+
+    passed = gate_pass(state.get("retrieval_score"), get_settings().retrieval_threshold)
+    return {"confidence_pass": passed, "visited": ["gate"]}
+
+
+def fallback_node(state) -> dict:
+    """知识类证据不足:回兜底话术 + 记 low_confidence_questions(数据飞轮预留)。"""
+    from langchain_core.messages import AIMessage
+
+    from app.core.config import get_settings
+    from app.db import SessionLocal
+    from app.services.generation_quality import log_low_confidence
+
+    try:
+        with SessionLocal() as s:
+            log_low_confidence(
+                s,
+                conversation_id=None,
+                raw_question=state.get("resolved_query", ""),
+                source="retrieval_low_conf",
+                reason=f"检索得分低于阈值 {get_settings().retrieval_threshold}",
+            )
+    except Exception:  # noqa: BLE001 - 记录失败不阻塞主流程
+        pass
+    return {
+        "messages": [AIMessage(content="抱歉，我目前的知识库中没有足够信息回答您的问题，已为您记录并转人工处理。")],
+        "visited": ["fallback"],
+    }
+
+
+def complaint_node(state) -> dict:
+    """投诉:安抚话术 + 转人工/建工单两个建议(不自动执行)。"""
+    from langchain_core.messages import AIMessage
+
+    return {
+        "messages": [AIMessage(content="非常抱歉给您带来了不好的体验。您可以点击下方按钮转接人工客服，或创建工单由我们跟进处理。")],
+        "handoff_suggestions": ["转人工", "建工单"],
+        "visited": ["complaint"],
+    }
+
+
+def chitchat_node(state) -> dict:
+    """闲聊:固定话术,不花模型调用。"""
+    from langchain_core.messages import AIMessage
+
+    return {
+        "messages": [AIMessage(content="您好呀，我是客服助手，请问有什么可以帮您的？")],
+        "visited": ["chitchat"],
+    }
+
+
+def log_node(state) -> dict:
+    """日志记录:把本次路径 + 意图 + 分流写进日志(供验收#1)。"""
+    import logging
+
+    logging.getLogger("graph").info(
+        "visited=%s intent=%s route=%s",
+        state.get("visited"),
+        state.get("intent"),
+        state.get("route"),
+    )
+    return {"visited": ["log"]}
