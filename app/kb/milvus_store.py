@@ -148,6 +148,13 @@ class MilvusStore:
         if self.client.has_collection(self.collection):
             self.client.drop_collection(self.collection)
 
+    def count(self) -> int:
+        """Number of rows in the collection."""
+        res = self.client.query(
+            self.collection, filter="id >= 0", output_fields=["count(*)"]
+        )
+        return int(res[0]["count(*)"])
+
     def upsert(self, rows: list[MilvusRecord]) -> None:
         """Insert or overwrite full rows keyed by primary key (idempotent by id)."""
         data = [

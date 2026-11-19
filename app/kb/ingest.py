@@ -161,3 +161,24 @@ def migrate_faq(session, store, embedder) -> int:
     insert_chunks(session, chunks)
     vectorize_pending(session, store, embedder)
     return len(chunks)
+
+
+def chunk_fingerprint(questions: str, answer: str) -> str:
+    """Dedup key for manual entry: normalized ``questions + answer``.
+
+    Deliberately distinct from the mining-side question-only dedup
+    (``qa_extract.dedupe``): a section split into several chunks shares the same
+    section title (questions) but differs in answer, so fingerprinting both keeps
+    those distinct while still making a verbatim re-entry idempotent.
+    """
+    from app.kb.qa_extract import normalize  # lazy: qa_extract imports ingest
+
+    return f"{normalize(questions)}|{normalize(answer)}"
+
+
+def find_duplicate_chunk(session, fingerprint: str) -> int | None:
+    """Return the id of an existing chunk with ``fingerprint``, else ``None``."""
+    for row in session.query(KnowledgeChunk).all():
+        if chunk_fingerprint(row.questions, row.answer) == fingerprint:
+            return row.id
+    return None

@@ -2,7 +2,14 @@
 
 from app.db.models import Faq, KnowledgeChunk
 from app.kb.chunker import Chunk
-from app.kb.ingest import insert_chunks, migrate_faq, rebuild, vectorize_pending
+from app.kb.ingest import (
+    chunk_fingerprint,
+    find_duplicate_chunk,
+    insert_chunks,
+    migrate_faq,
+    rebuild,
+    vectorize_pending,
+)
 from app.kb.milvus_store import MilvusStore
 
 
@@ -136,3 +143,23 @@ def test_build_session_store_embedder_does_not_ensure_collection(monkeypatch, tm
 
     ingest_docs._build_session_store_embedder()
     assert ensured == []
+
+
+def test_chunk_fingerprint_same_qa_equal():
+    a = chunk_fingerprint("怎么退", "七天无理由")
+    b = chunk_fingerprint(" 怎么退？", "七天无理由")
+    assert a == b
+
+
+def test_chunk_fingerprint_diff_answer_diff():
+    assert chunk_fingerprint("怎么退", "七天无理由") != chunk_fingerprint("怎么退", "7天包退")
+
+
+def test_find_duplicate_chunk_returns_existing_id(session):
+    from app.db.models import KnowledgeChunk
+
+    session.add(KnowledgeChunk(category="售后", questions="怎么退", answer="七天无理由"))
+    session.commit()
+    fp = chunk_fingerprint("怎么退", "七天无理由")
+    assert find_duplicate_chunk(session, fp) is not None
+    assert find_duplicate_chunk(session, chunk_fingerprint("怎么退", "别的内容")) is None

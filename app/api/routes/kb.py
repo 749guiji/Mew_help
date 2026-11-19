@@ -13,15 +13,28 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, field_validator
 
 from app.core.config import get_settings
 from app.db import SessionLocal
+from app.db.models import KnowledgeChunk, QaExtractionStaging
 from app.kb.chunker import Chunk, chunk_markdown
 from app.kb.embedding import Embedder
-from app.kb.ingest import insert_chunks, vectorize_pending
-from app.kb.retrieval import _get_store, default_retrieve
+from app.kb.hybrid import (
+    dense_retrieve,
+    hybrid_rerank_retrieve,
+    hybrid_retrieve,
+    sparse_retrieve,
+)
+from app.kb.ingest import (
+    chunk_fingerprint,
+    find_duplicate_chunk,
+    insert_chunks,
+    vectorize_pending,
+)
+from app.kb.reranker import Reranker
+from app.kb.retrieval import _get_store
 from app.kb.sources import content_type_from_path, list_kb_materials
 
 router = APIRouter()
@@ -48,6 +61,7 @@ class KBChunkCreate(BaseModel):
 
 class KBSearchRequest(BaseModel):
     query: str
+    strategy: str = "hybrid_rerank"
 
     @field_validator("query")
     @classmethod
@@ -56,6 +70,9 @@ class KBSearchRequest(BaseModel):
         if not v:
             raise ValueError("must not be blank")
         return v
+
+
+STRATEGIES = ("dense", "sparse", "hybrid", "hybrid_rerank")
 
 
 @router.get("/kb")
@@ -91,7 +108,13 @@ def preview(path: str) -> list[dict]:
 
 @router.post("/api/kb/chunks")
 def add_chunk(payload: KBChunkCreate) -> dict:
+    fingerprint = chunk_fingerprint(payload.questions, payload.answer)
     with SessionLocal() as session:
+        existing = find_duplicate_chunk(session, fingerprint)
+        if existing is not None:
+            return JSONResponse(
+                status_code=409, content={"duplicate": True, "id": existing}
+            )
         ids = insert_chunks(
             session,
             [
@@ -118,16 +141,132 @@ def vectorize() -> dict:
     return {"vectorized": n}
 
 
+def _chunk_dict(c) -> dict:
+    return {
+        "chunk_id": c.chunk_id,
+        "score": c.score,
+        "section_path": c.section_path,
+        "category": c.category,
+        "answer": c.answer,
+        "questions": c.questions,
+    }
+
+
 @router.post("/api/kb/search")
 def search(payload: KBSearchRequest) -> list[dict]:
+    if payload.strategy not in STRATEGIES:
+        raise HTTPException(
+            status_code=422, detail=f"unknown strategy: {payload.strategy}"
+        )
+    settings = get_settings()
+    store = _get_store()
+    embedder = Embedder(dim=settings.embedding_dim)
+    with SessionLocal() as session:
+        if payload.strategy == "dense":
+            chunks = dense_retrieve(
+                payload.query, session=session, store=store, embedder=embedder, top_k=10
+            )
+        elif payload.strategy == "sparse":
+            chunks = sparse_retrieve(payload.query, session=session, store=store, top_k=10)
+        elif payload.strategy == "hybrid":
+            chunks = hybrid_retrieve(
+                payload.query, session=session, store=store, embedder=embedder, top_k=10
+            )
+        else:  # hybrid_rerank
+            reranker = Reranker(
+                model_name=settings.rerank_model, use_fp16=settings.rerank_use_fp16
+            )
+            chunks = hybrid_rerank_retrieve(
+                payload.query,
+                session=session,
+                store=store,
+                embedder=embedder,
+                reranker=reranker,
+                top_k=10,
+            )
+    return [_chunk_dict(c) for c in chunks]
+
+
+@router.get("/api/kb/overview")
+def overview() -> dict:
+    with SessionLocal() as session:
+        chunks = session.query(KnowledgeChunk).count()
+        pending = (
+            session.query(KnowledgeChunk)
+            .filter(KnowledgeChunk.vectorize_status == "pending")
+            .count()
+        )
+        key_clauses = (
+            session.query(KnowledgeChunk)
+            .filter(KnowledgeChunk.is_key_clause == 1)
+            .count()
+        )
+    done = chunks - pending
+    milvus = None
+    try:
+        milvus = _get_store().count()
+    except Exception:  # noqa: BLE001 - Milvus unreadable is a state, not an error
+        milvus = None
+    consistent = (done == milvus) if milvus is not None else None
+    return {
+        "chunks": chunks,
+        "pending": pending,
+        "done": done,
+        "milvus": milvus,
+        "key_clauses": key_clauses,
+        "consistent": consistent,
+    }
+
+
+@router.get("/api/kb/staging")
+def staging() -> dict:
+    with SessionLocal() as session:
+        counts = {
+            status: session.query(QaExtractionStaging)
+            .filter(QaExtractionStaging.status == status)
+            .count()
+            for status in ("extracted", "kept", "discarded")
+        }
+        rows = (
+            session.query(QaExtractionStaging)
+            .order_by(QaExtractionStaging.id.desc())
+            .limit(50)
+            .all()
+        )
+    return {
+        **counts,
+        "rows": [
+            {
+                "id": r.id,
+                "batch_no": r.batch_no,
+                "source_ref": r.source_ref,
+                "question": r.question,
+                "answer": r.answer,
+                "status": r.status,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/api/kb/recent")
+def recent(limit: int = 20) -> list[dict]:
+    with SessionLocal() as session:
+        rows = (
+            session.query(KnowledgeChunk)
+            .order_by(KnowledgeChunk.id.desc())
+            .limit(limit)
+            .all()
+        )
     return [
         {
-            "chunk_id": c.chunk_id,
-            "score": c.score,
-            "section_path": c.section_path,
-            "category": c.category,
-            "answer": c.answer,
-            "questions": c.questions,
+            "id": r.id,
+            "category": r.category,
+            "questions": r.questions,
+            "answer": r.answer,
+            "content_type": r.content_type,
+            "vectorize_status": r.vectorize_status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
         }
-        for c in default_retrieve(payload.query)
+        for r in rows
     ]
