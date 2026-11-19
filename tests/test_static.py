@@ -23,3 +23,19 @@ def test_script_served():
         r = c.get("/app.js")
     assert r.status_code == 200
     assert "javascript" in r.headers["content-type"]
+
+
+def test_kb_page_served_with_blocks():
+    with TestClient(app) as c:
+        r = c.get("/kb")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    for heading in ("库存闸条", "对话挖知识", "最近入库", "检索自测", "手工录入"):
+        assert heading in r.text
+
+
+def test_kb_script_served():
+    with TestClient(app) as c:
+        r = c.get("/kb.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]

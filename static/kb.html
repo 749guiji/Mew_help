@@ -13,15 +13,25 @@
       <span class="avatar">📚</span>
       <div class="header-text">
         <h1>知识库录入</h1>
-        <p class="status"><a href="/" class="kb-back">← 返回聊天</a></p>
+        <p class="status"><a href="/" class="kb-back">← 返回聊天</a> · <a href="/admin" class="kb-back">后台首页</a></p>
       </div>
     </header>
 
     <div class="kb-main">
       <section class="kb-section">
-        <h2>材料清单与切块预览</h2>
+        <h2>库存闸条</h2>
+        <div id="overview" class="kb-overview">加载中…</div>
+      </section>
+
+      <section class="kb-section">
+        <h2>建库材料</h2>
+        <div class="kb-actions">
+          <button id="preview-btn" type="button">切块预览（kb-preview）</button>
+          <button id="build-btn" type="button">建库（kb-build）</button>
+        </div>
         <div id="materials" class="kb-materials">加载中…</div>
         <div id="preview" class="kb-preview"></div>
+        <div id="material-job-log" class="kb-log" hidden></div>
       </section>
 
       <section class="kb-section">
@@ -49,18 +59,42 @@
       </section>
 
       <section class="kb-section">
-        <h2>向量化补 pending</h2>
-        <button id="vectorize-btn" type="button">补 pending</button>
+        <h2>对话挖知识</h2>
+        <div class="kb-actions">
+          <button id="mine-btn" type="button">挖知识（kb-mine）</button>
+        </div>
+        <div id="staging" class="kb-overview">暂存三态加载中…</div>
+        <div id="mine-job-log" class="kb-log" hidden></div>
+      </section>
+
+      <section class="kb-section">
+        <h2>向量化与双写</h2>
+        <div class="kb-actions">
+          <button id="vectorize-btn" type="button">补 pending（kb-vectorize）</button>
+          <button id="reset-btn" type="button">清库重建（kb-reset）</button>
+        </div>
         <div id="vectorize-result" class="kb-result"></div>
+        <div id="vectorize-job-log" class="kb-log" hidden></div>
       </section>
 
       <section class="kb-section">
         <h2>检索自测</h2>
         <div class="kb-search">
+          <select id="search-strategy" title="检索路线">
+            <option value="hybrid_rerank">hybrid_rerank</option>
+            <option value="dense">dense</option>
+            <option value="sparse">sparse</option>
+            <option value="hybrid">hybrid</option>
+          </select>
           <input id="search-input" placeholder="输入问题，如：退货政策是什么？">
           <button id="search-btn" type="button">检索</button>
         </div>
         <div id="search-result" class="kb-result"></div>
+      </section>
+
+      <section class="kb-section">
+        <h2>最近入库</h2>
+        <div id="recent" class="kb-result">加载中…</div>
       </section>
     </div>
   </main>

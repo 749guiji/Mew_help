@@ -174,3 +174,63 @@
 .kb-search button:hover {
   background: var(--brand-hover);
 }
+
+.kb-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kb-actions button,
+.kb-section button.small {
+  border: none;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.kb-actions button:hover,
+.kb-section button.small:hover {
+  background: var(--brand-hover);
+}
+
+.kb-actions button:disabled,
+.kb-section button.small:disabled {
+  background: var(--muted);
+  cursor: not-allowed;
+}
+
+.kb-overview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kb-stat {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff8ee;
+  font-size: 13px;
+}
+
+.kb-stat b {
+  color: var(--brand-hover);
+}
+
+.kb-log {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow: auto;
+  margin-top: 8px;
+}
