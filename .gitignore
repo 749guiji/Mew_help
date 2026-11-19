@@ -31,7 +31,7 @@ Thumbs.db
 .vscode/
 
 # Milvus Lite / SQLite local data
-data/
+/data/
 *.db
 
 # Job runner logs
