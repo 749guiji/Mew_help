@@ -7,7 +7,7 @@ kb-preview:
 	.venv/Scripts/python.exe -m app.jobs.ingest_docs --preview
 
 kb-build:
-	.venv/Scripts/python.exe -m app.jobs.ingest_docs --force
+	.venv/Scripts/python.exe -m app.jobs.ingest_docs
 
 kb-mine:
 	.venv/Scripts/python.exe -m app.jobs.qa_mining

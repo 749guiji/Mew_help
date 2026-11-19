@@ -49,3 +49,13 @@ def test_status_and_log_endpoints(monkeypatch):
     c = _client()
     assert c.get("/api/jobs/kb-build/status").json()["done"] is True
     assert c.get("/api/jobs/kb-build/log").text == "log tail"
+
+
+def test_status_unknown_job_404():
+    r = _client().get("/api/jobs/nope/status")
+    assert r.status_code == 404
+
+
+def test_log_unknown_job_404():
+    r = _client().get("/api/jobs/nope/log")
+    assert r.status_code == 404

@@ -55,7 +55,22 @@ def main(argv=None) -> int:
         action="store_true",
         help="Drop + recreate the Milvus collection and re-vectorize every chunk.",
     )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Dry-run: chunk materials and print counts without writing anything.",
+    )
     args = parser.parse_args(argv)
+
+    if args.preview:
+        from app.kb.sources import preview_kb
+
+        result = preview_kb()
+        print(
+            f"kb-preview: {result['files']} files, {result['chunks']} chunks, "
+            f"{result['key_clauses']} key clauses"
+        )
+        return 0
 
     session, store, embedder, settings = _build_session_store_embedder()
     try:

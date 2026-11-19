@@ -48,3 +48,23 @@ def list_kb_materials(directory: Path = KNOWLEDGE_DIR) -> list[KbMaterial]:
             )
         )
     return out
+
+
+def preview_kb(directory: Path = KNOWLEDGE_DIR) -> dict:
+    """Chunk every material without writing anything (dry-run), returning counts."""
+    from app.core.config import get_settings
+    from app.kb.chunker import chunk_markdown
+
+    settings = get_settings()
+    files = chunks = key_clauses = 0
+    for material in list_kb_materials(directory):
+        files += 1
+        cs = chunk_markdown(
+            material.path.read_text(encoding="utf-8"),
+            material.content_type,
+            max_chars=settings.chunk_max_chars,
+            overlap=settings.chunk_overlap_chars,
+        )
+        chunks += len(cs)
+        key_clauses += sum(1 for c in cs if c.is_key_clause)
+    return {"files": files, "chunks": chunks, "key_clauses": key_clauses}

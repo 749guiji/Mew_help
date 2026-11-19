@@ -156,3 +156,33 @@ def test_overview_consistent_true_when_counts_match(kb_env, monkeypatch):
     assert body["done"] == 2
     assert body["milvus"] == 2
     assert body["consistent"] is True
+
+
+def test_overview_unreadable_when_milvus_raises(kb_env, monkeypatch):
+    from types import SimpleNamespace
+
+    def boom():
+        raise RuntimeError("milvus down")
+
+    monkeypatch.setattr(kb, "_get_store", lambda: SimpleNamespace(count=boom))
+
+    body = _client().get("/api/kb/overview").json()
+    assert body["milvus"] is None
+    assert body["consistent"] is None
+
+
+def test_overview_mismatch_when_counts_differ(kb_env, monkeypatch):
+    from types import SimpleNamespace
+
+    _, SessionLocal = kb_env
+    with SessionLocal() as s:
+        s.add(KnowledgeChunk(category="c", questions="q", answer="a",
+                             content_type="faq", vectorize_status="done"))
+        s.commit()
+
+    monkeypatch.setattr(kb, "_get_store", lambda: SimpleNamespace(count=lambda: 0))
+
+    body = _client().get("/api/kb/overview").json()
+    assert body["done"] == 1
+    assert body["milvus"] == 0
+    assert body["consistent"] is False

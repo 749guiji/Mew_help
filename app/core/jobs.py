@@ -49,39 +49,48 @@ def _log_file(name: str) -> Path:
     return _LOG_DIR / f"{name}.log"
 
 
+# ``_START_LOCK`` makes the check-and-set in ``start_job`` atomic (TOCTOU); ``_RUN_LOCK``
+# serializes job execution so the process-global stdout/stderr redirection in ``_wrap``
+# is never clobbered by a second concurrent job (and matches Milvus Lite's single-writer model).
+_START_LOCK = threading.Lock()
+_RUN_LOCK = threading.Lock()
+
+
 def start_job(name: str) -> str | None:
     """Start a registered job. Returns a job id, or ``None`` if already running.
 
     Raises ``KeyError`` for an unknown job name (the whitelist).
     """
     JOB_REGISTRY[name]  # raises KeyError for unknown names
-    st = _state(name)
-    if st["running"]:
-        return None
-    job_id = uuid.uuid4().hex
-    st.update(running=True, done=False, error=None, job_id=job_id)
-    thread = threading.Thread(target=_wrap, args=(name,), daemon=True)
-    st["thread"] = thread
-    thread.start()
+    with _START_LOCK:
+        st = _state(name)
+        if st["running"]:
+            return None
+        job_id = uuid.uuid4().hex
+        st.update(running=True, done=False, error=None, job_id=job_id)
+        thread = threading.Thread(target=_wrap, args=(name,), daemon=True)
+        st["thread"] = thread
+        thread.start()
     return job_id
 
 
 def _wrap(name: str) -> None:
-    """Run a job with stdout/stderr captured to its log file."""
-    job = JOB_REGISTRY[name]
-    st = _state(name)
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(_log_file(name), "a", encoding="utf-8") as fh:
-        old_stdout, old_stderr = sys.stdout, sys.stderr
-        sys.stdout = sys.stderr = fh
-        try:
-            job.run_fn()
-            st["done"] = True
-        except Exception as exc:  # noqa: BLE001 - surface in status, keep running
-            st["error"] = str(exc)
-        finally:
-            sys.stdout, sys.stderr = old_stdout, old_stderr
-            st["running"] = False
+    """Run a job with stdout/stderr captured to its log file (serialized)."""
+    with _RUN_LOCK:
+        job = JOB_REGISTRY[name]
+        st = _state(name)
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(_log_file(name), "a", encoding="utf-8") as fh:
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            sys.stdout = sys.stderr = fh
+            try:
+                job.run_fn()
+                st["done"] = True
+            except Exception as exc:  # noqa: BLE001 - surface in status, keep running
+                st["error"] = str(exc)
+            finally:
+                sys.stdout, sys.stderr = old_stdout, old_stderr
+                st["running"] = False
 
 
 def job_status(name: str) -> dict:
@@ -110,31 +119,26 @@ def job_log_tail(name: str, n_lines: int = 200) -> str:
 
 def _run_kb_preview() -> dict:
     """Chunk every knowledge material without writing anything (dry run)."""
-    from app.kb.chunker import chunk_markdown
-    from app.kb.sources import list_kb_materials
+    from app.kb.sources import preview_kb
 
-    settings = get_settings()
-    files = chunks = key_clauses = 0
-    for material in list_kb_materials():
-        files += 1
-        cs = chunk_markdown(
-            material.path.read_text(encoding="utf-8"),
-            material.content_type,
-            max_chars=settings.chunk_max_chars,
-            overlap=settings.chunk_overlap_chars,
-        )
-        chunks += len(cs)
-        key_clauses += sum(1 for c in cs if c.is_key_clause)
-        print(f"{material.name}: {len(cs)} chunks")
-    print(f"kb-preview: {files} files, {chunks} chunks, {key_clauses} key clauses")
-    return {"files": files, "chunks": chunks, "key_clauses": key_clauses}
+    result = preview_kb()
+    print(
+        f"kb-preview: {result['files']} files, {result['chunks']} chunks, "
+        f"{result['key_clauses']} key clauses"
+    )
+    return result
 
 
 def _run_kb_build() -> dict:
-    """Ingest every knowledge material (chunk -> MySQL pending -> vectorize)."""
+    """Ingest every material (chunk -> MySQL pending -> vectorize) + migrate faq.
+
+    Mirrors ``ingest_docs`` (without ``--force``): refuses when chunks already
+    exist, so a double-click cannot silently duplicate the corpus.
+    """
     from app.db import SessionLocal
+    from app.db.models import KnowledgeChunk
     from app.kb.embedding import Embedder
-    from app.kb.ingest import ingest_document
+    from app.kb.ingest import ingest_document, migrate_faq
     from app.kb.retrieval import _get_store
     from app.kb.sources import list_kb_materials
 
@@ -143,6 +147,10 @@ def _run_kb_build() -> dict:
     embedder = Embedder(dim=settings.embedding_dim)
     total = 0
     with SessionLocal() as session:
+        existing = session.query(KnowledgeChunk).count()
+        if existing > 0:
+            print(f"已有 {existing} 块，kb-build 跳过（用 kb-reset 重建）")
+            return {"chunks": 0, "skipped": True, "existing": existing}
         for material in list_kb_materials():
             ids = ingest_document(
                 session,
@@ -156,6 +164,9 @@ def _run_kb_build() -> dict:
             )
             total += len(ids)
             print(f"ingested {material.path} ({material.content_type}): {len(ids)} chunks")
+        migrated = migrate_faq(session, store, embedder)
+        total += migrated
+        print(f"migrated faq: {migrated} chunks")
     print(f"kb-build: {total} chunks")
     return {"chunks": total}
 

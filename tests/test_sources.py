@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from app.kb.sources import content_type_from_path, list_kb_materials
+from app.kb.sources import content_type_from_path, list_kb_materials, preview_kb
 
 
 def test_content_type_rule():
@@ -24,3 +24,12 @@ def test_list_materials_reads_knowledge_dir(tmp_path):
     assert mats[0].chars == 2  # "世界"
     assert mats[1].content_type == "manual"
     assert mats[1].chars == 5  # "hello"
+
+
+def test_preview_kb_counts_without_writing(tmp_path):
+    (tmp_path / "a-faq.md").write_text("# 标题\n\nQ: 怎么退\nA: 七天无理由\n", encoding="utf-8")
+
+    result = preview_kb(directory=tmp_path)
+
+    assert result["files"] == 1
+    assert result["chunks"] >= 1
