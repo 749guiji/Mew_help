@@ -19,7 +19,7 @@ function appendBubble(role, text) {
   if (role === "assistant") {
     const avatar = document.createElement("span");
     avatar.className = "avatar";
-    avatar.textContent = "🤖";
+    avatar.textContent = "🐱";
     bubble.appendChild(avatar);
   }
   const content = document.createElement("div");
@@ -193,6 +193,10 @@ function dispatch(evt, ctx) {
   if (evt.type === "meta") {
     state.sessionId = evt.session_id;
   } else if (evt.type === "token") {
+    if (ctx.typing) {
+      ctx.typing.remove();
+      ctx.typing = null;
+    }
     ctx.textSpan.textContent += evt.content;
     scrollToBottom();
   } else if (evt.type === "tool") {
@@ -241,11 +245,20 @@ async function send() {
   textSpan.className = "text";
   contentEl.appendChild(textSpan);
 
+  const typing = document.createElement("span");
+  typing.className = "typing";
+  for (let i = 0; i < 3; i++) {
+    const d = document.createElement("span");
+    d.className = "typing-dot";
+    typing.appendChild(d);
+  }
+  contentEl.appendChild(typing);
+
   const cursor = document.createElement("span");
   cursor.className = "cursor";
   contentEl.appendChild(cursor);
 
-  const ctx = { textSpan, badgeEl, citations: [], contentEl };
+  const ctx = { textSpan, badgeEl, citations: [], contentEl, typing };
 
   setStreaming(true);
   try {
@@ -266,6 +279,10 @@ async function send() {
     textSpan.textContent += "\n[出错了] " + err.message;
   } finally {
     cursor.remove();
+    if (ctx.typing) {
+      ctx.typing.remove();
+      ctx.typing = null;
+    }
     setStreaming(false);
     if (ctx.citations.length) linkifyCitations(textSpan, ctx.citations);
     addFeedback(contentEl);

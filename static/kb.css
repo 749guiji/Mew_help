@@ -8,12 +8,12 @@
   max-width: 860px;
   background: var(--surface);
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(233, 132, 42, 0.16);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
 .kb-back {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--brand);
   text-decoration: none;
   font-size: 12px;
 }
@@ -41,7 +41,7 @@
 
 .kb-material {
   border: 1px solid var(--border);
-  background: #fff8ee;
+  background: var(--surface);
   color: var(--text);
   border-radius: 8px;
   padding: 6px 12px;
@@ -65,7 +65,7 @@
   border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 8px;
-  background: #fffaf3;
+  background: var(--surface);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -105,12 +105,12 @@
 .kb-form input,
 .kb-form select,
 .kb-form textarea {
-  border: 1px solid #f3c898;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 14px;
   font-family: inherit;
-  background: #fff8ee;
+  background: var(--surface);
   color: var(--text);
   outline: none;
 }
@@ -152,12 +152,12 @@
 
 .kb-search input {
   flex: 1;
-  border: 1px solid #f3c898;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
   font-family: inherit;
-  background: #fff8ee;
+  background: var(--surface);
   color: var(--text);
   outline: none;
 }
@@ -213,7 +213,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 12px;
-  background: #fff8ee;
+  background: var(--surface);
   font-size: 13px;
 }
 
@@ -249,7 +249,7 @@
   padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff8ee;
+  background: var(--surface);
 }
 
 .admin-nav a:hover {
