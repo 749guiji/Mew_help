@@ -26,8 +26,8 @@ def _reset_node(state: GraphState) -> dict:
 
 
 def _slot_node(state: GraphState) -> dict:
-    """订单槽位:带 order_id = 恢复挂起的子流程;无 = 新问题(弃选则清挂起上下文)。"""
-    if state.get("order_id"):
+    """订单槽位:带 order_id 且有挂起子流程 = 恢复;否则 = 新问题(弃选/异常输入则清挂起上下文)。"""
+    if state.get("order_id") and state.get("pending_slot") == "order_id":
         # 恢复:保留 resolved_query/route/intent,清 pending_slot,跳 get_order
         return {"pending_slot": None, "visited": ["slot"]}
     # 新问题 / 弃选:清掉可能挂起的子流程上下文
@@ -105,14 +105,16 @@ def _expand_node(state: GraphState) -> dict:
     from app.core.config import get_settings
     from app.core.llm import get_llm
 
-    queries = nodes.expand_queries(get_llm(get_settings()), state["resolved_query"])
+    q = state.get("resolved_query") or state.get("raw_query") or ""
+    queries = nodes.expand_queries(get_llm(get_settings()), q)
     return {"expanded_queries": queries, "visited": ["expand"]}
 
 
 def _retrieve_policy_node(state: GraphState) -> dict:
     from app.kb.retrieval import retrieve_multi
 
-    queries = state.get("expanded_queries") or [state["resolved_query"]]
+    q = state.get("resolved_query") or state.get("raw_query") or ""
+    queries = state.get("expanded_queries") or [q]
     chunks = retrieve_multi(queries)
     score = max((c.score for c in chunks), default=None) if chunks else None
     return {"retrieval_chunks": chunks, "retrieval_score": score, "visited": ["retrieve_policy"]}

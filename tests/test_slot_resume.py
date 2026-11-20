@@ -121,3 +121,20 @@ def test_refund_zero_chunks_falls_back(monkeypatch):
 
     assert "fallback" in r2["visited"]
     assert "agent" not in r2["visited"]
+
+
+def test_order_id_without_pending_subflow_does_not_crash(monkeypatch):
+    import app.kb.retrieval as retrieval_mod
+
+    monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: _chunks())
+    monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
+
+    graph = build_graph()
+    payload = {"messages": [("user", "查订单")], "raw_query": "查订单", "order_id": "1001"}
+    result = asyncio.run(
+        graph.ainvoke(payload, config={"configurable": {"thread_id": "fresh"}})
+    )
+
+    # 无挂起子流程却带 order_id:当作普通新问题走 coref/intent,不崩
+    assert "coref" in result["visited"]
+    assert "intent" in result["visited"]
