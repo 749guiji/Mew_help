@@ -206,6 +206,8 @@ function dispatch(evt, ctx) {
     ctx.citations = evt.citations || [];
   } else if (evt.type === "handoff") {
     renderHandoff(evt.suggestions || [], ctx.contentEl);
+  } else if (evt.type === "order_select") {
+    renderOrderCards(evt.orders || [], ctx.contentEl);
   } else if (evt.type === "error") {
     ctx.textSpan.textContent += "\n[出错了] " + evt.message;
     scrollToBottom();
@@ -229,11 +231,7 @@ function handleSSE(chunk, ctx) {
   }
 }
 
-async function send() {
-  const text = inputEl.value.trim();
-  if (!text || state.streaming) return;
-  inputEl.value = "";
-
+async function postMessage(text, { order_id = null, after = null } = {}) {
   appendBubble("user", text);
   const contentEl = appendBubble("assistant", "");
 
@@ -262,10 +260,12 @@ async function send() {
 
   setStreaming(true);
   try {
+    const body = { message: text, session_id: state.sessionId };
+    if (order_id) body.order_id = order_id;
     const res = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, session_id: state.sessionId }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const reader = res.body.getReader();
@@ -287,7 +287,135 @@ async function send() {
     if (ctx.citations.length) linkifyCitations(textSpan, ctx.citations);
     addFeedback(contentEl);
     scrollToBottom();
+    if (after) after(contentEl);
   }
+}
+
+function send() {
+  const text = inputEl.value.trim();
+  if (!text || state.streaming) return;
+  inputEl.value = "";
+  postMessage(text, {});
+}
+
+// 订单选择卡片:order_select 事件渲染,点选后回填 order_id 并续跑子流程。
+function renderOrderCards(orders, contentEl) {
+  if (!orders || !orders.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "order-cards";
+  for (const o of orders) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "order-card";
+
+    const main = document.createElement("div");
+    main.className = "order-card-main";
+    const id = document.createElement("span");
+    id.className = "order-card-id";
+    id.textContent = "订单 " + o.order_id;
+    const status = document.createElement("span");
+    status.className = "order-card-status";
+    status.textContent = o.status;
+    main.appendChild(id);
+    main.appendChild(status);
+
+    const sub = document.createElement("div");
+    sub.className = "order-card-sub";
+    sub.textContent = o.product + " · ¥" + o.amount;
+
+    card.appendChild(main);
+    card.appendChild(sub);
+    card.addEventListener("click", () => selectOrder(o));
+    wrap.appendChild(card);
+  }
+  contentEl.appendChild(wrap);
+  scrollToBottom();
+}
+
+function removeOrderCards() {
+  document.querySelectorAll(".order-cards").forEach((el) => el.remove());
+}
+
+async function selectOrder(order) {
+  if (state.streaming) return;
+  removeOrderCards();
+  await postMessage("已选择订单 " + order.order_id, {
+    order_id: order.order_id,
+    after: (contentEl) => renderRefundForm(contentEl, order.order_id),
+  });
+}
+
+const REFUND_REASONS = ["7天无理由", "质量问题", "发错货", "少件", "与描述不符", "其他"];
+
+function renderRefundForm(contentEl, orderId) {
+  const form = document.createElement("div");
+  form.className = "refund-form";
+
+  const title = document.createElement("div");
+  title.className = "refund-form-title";
+  title.textContent = "申请退款";
+
+  const orderRow = document.createElement("div");
+  orderRow.className = "refund-form-row";
+  const orderLabel = document.createElement("span");
+  orderLabel.className = "refund-label";
+  orderLabel.textContent = "订单";
+  const orderVal = document.createElement("span");
+  orderVal.className = "refund-order";
+  orderVal.textContent = orderId;
+  orderRow.appendChild(orderLabel);
+  orderRow.appendChild(orderVal);
+
+  const reasonRow = document.createElement("div");
+  reasonRow.className = "refund-form-row";
+  const reasonLabel = document.createElement("span");
+  reasonLabel.className = "refund-label";
+  reasonLabel.textContent = "退款原因";
+  const select = document.createElement("select");
+  select.className = "refund-select";
+  for (const r of REFUND_REASONS) {
+    const opt = document.createElement("option");
+    opt.value = r;
+    opt.textContent = r;
+    select.appendChild(opt);
+  }
+  reasonRow.appendChild(reasonLabel);
+  reasonRow.appendChild(select);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "refund-submit";
+  btn.textContent = "提交退款申请";
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/refunds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: state.sessionId,
+          order_id: orderId,
+          reason: select.value,
+        }),
+      });
+      if (res.ok) {
+        const { refund_id } = await res.json();
+        btn.textContent = "已提交退款单 #" + refund_id;
+      } else {
+        btn.textContent = "提交失败";
+      }
+    } catch (err) {
+      btn.textContent = "提交失败";
+    }
+  });
+
+  form.appendChild(title);
+  form.appendChild(orderRow);
+  form.appendChild(reasonRow);
+  form.appendChild(btn);
+  contentEl.appendChild(form);
+  scrollToBottom();
 }
 
 sendBtn.addEventListener("click", send);
