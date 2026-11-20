@@ -1,30 +1,43 @@
-"""Mock order data source (ch06).
+"""Mock order data source (ch06 rework): per-user stable orders.
 
-Orders are an in-process constant list (matching ch02's "订单走工具内 mock,
-不建表" decision), not a database table. The order picker and ``query_order``
-tool both read from here, so the list the user selects from and the list the
-tool answers from never diverge.
+订单不落库,用随机种子生成确定性的 mock 快照:同 order_id 永远同一单、
+同 user_id 永远同一组订单。query_order 工具与 fetch_order 节点同源,
+所以「订单选择器列的订单」和「点选后查到的订单」永远对得上。
 """
 
 from __future__ import annotations
 
-SEED_ORDERS: list[dict] = [
-    {"order_id": "1001", "product": "无线蓝牙耳机", "amount": "199.00", "status": "已签收"},
-    {"order_id": "1002", "product": "保温杯", "amount": "89.00", "status": "已发货，运输中"},
-    {"order_id": "1003", "product": "机械键盘", "amount": "399.00", "status": "已完成"},
-    {"order_id": "1004", "product": "帆布鞋", "amount": "159.00", "status": "已支付，待发货"},
-    {"order_id": "1005", "product": "充电宝", "amount": "129.00", "status": "退款中"},
-]
+import random
+
+_PRODUCTS = ["智能猫砂盆", "猫粮 5kg", "猫爬架", "自动饮水机"]
+_STATUSES = ["待付款", "已付款", "已发货", "已签收"]
 
 
-def list_orders() -> list[dict]:
-    """Return a copy of the seed orders (callers must not mutate the source)."""
-    return [dict(o) for o in SEED_ORDERS]
+def order_snapshot(order_id: str) -> dict:
+    """订单快照(纯函数,种子固定 → 同 order_id 稳定)。"""
+    rng = random.Random(f"order:{order_id}")
+    return {
+        "order_id": order_id,
+        "product": rng.choice(_PRODUCTS),
+        "status": rng.choice(_STATUSES),
+        "amount": rng.randint(50, 2000),
+        "tracking_no": f"SF{rng.randint(10**11, 10**12 - 1)}",
+    }
 
 
-def get_order(order_id: str) -> dict | None:
-    """Return the order with ``order_id``, or ``None`` when absent."""
-    for o in SEED_ORDERS:
-        if o["order_id"] == order_id:
-            return dict(o)
-    return None
+def list_user_orders(user_id: str) -> list[dict]:
+    """按 user_id 稳定列出该用户的 2~4 笔订单(mock,不落库)。"""
+    rng = random.Random(f"user_orders:{user_id}")
+    ids = [str(rng.randint(1000, 9999)) for _ in range(rng.randint(2, 4))]
+    out: list[dict] = []
+    for oid in ids:
+        s = order_snapshot(oid)
+        out.append(
+            {"order_id": oid, "product": s["product"], "status": s["status"], "amount": s["amount"]}
+        )
+    return out
+
+
+def get_order(order_id: str) -> dict:
+    """返回 ``order_snapshot(order_id)``(mock 下任何订单号都命中)。"""
+    return order_snapshot(order_id)

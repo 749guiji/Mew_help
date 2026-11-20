@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from app.graph.nodes import IntentResult, classify_intent, maybe_escalate, resolve_coref
+from app.graph.nodes import IntentResult, classify_intent, resolve_coref
 
 
 class FakeLLM:
@@ -39,23 +39,20 @@ def test_classify_intent_unknown_intent_falls_back_to_other():
     assert r.confidence == 0.0
 
 
-def test_maybe_escalate_noop_without_escalate_llm():
-    r = IntentResult("物流", 0.4)
-    assert maybe_escalate(None, "它到哪了", r, 0.6) is r
+class CapturingLLM:
+    def __init__(self, content):
+        self._content = content
+        self.last_input = None
+
+    def __call__(self, inp):
+        self.last_input = inp
+        return SimpleNamespace(content=self._content)
 
 
-def test_maybe_escalate_keeps_high_confidence():
-    r = IntentResult("物流", 0.9)
-    out = maybe_escalate(FakeLLM('{"intent":"物流","confidence":0.9}'), "它到哪了", r, 0.6)
-    assert out is r
-
-
-def test_maybe_escalate_escalates_low_confidence():
-    r = IntentResult("物流", 0.4)
-    big = FakeLLM('{"intent":"退款退货","confidence":0.85}')
-    out = maybe_escalate(big, "它能退吗", r, 0.6)
-    assert out.intent == "退款退货"
-    assert out.confidence == 0.85
+def test_classify_intent_passes_history_to_prompt():
+    llm = CapturingLLM('{"intent":"物流","confidence":0.9}')
+    classify_intent(llm, "它到哪了", "用户:我买了耳机")
+    assert "我买了耳机" in str(llm.last_input)
 
 
 def test_resolve_coref_passthrough_when_complete():

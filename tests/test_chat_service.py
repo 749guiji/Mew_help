@@ -33,11 +33,12 @@ class FakeGraph:
 
     async def ainvoke(self, input, config=None):
         self.inputs.append((input, config))
-        for m in input.get("messages", []):
-            if isinstance(m, tuple):
-                self._messages.append(HumanMessage(content=m[1]))
-            else:
-                self._messages.append(m)
+        if isinstance(input, dict):
+            for m in input.get("messages", []):
+                if isinstance(m, tuple):
+                    self._messages.append(HumanMessage(content=m[1]))
+                else:
+                    self._messages.append(m)
         for m in self.result.get("messages", []):
             self._messages.append(m)
         state = dict(self.result)
@@ -179,24 +180,38 @@ def test_second_turn_has_no_stale_handoff_or_citations(sqlite_session_local):
     assert [e["content"] for e in e2 if e["type"] == "token"] == ["您好呀"]
 
 
-def test_chat_request_accepts_order_id():
-    from app.schemas.chat import ChatRequest
-
-    r = ChatRequest(message="已选择订单", order_id="1001")
-    assert r.order_id == "1001"
+class _Intr:
+    def __init__(self, value):
+        self.value = value
 
 
-def test_stream_emits_order_select(sqlite_session_local):
-    orders = [{"order_id": "1001", "product": "耳机", "amount": "199", "status": "已签收"}]
-    graph = FakeGraph({"messages": [AIMessage(content="请选择订单")], "order_list": orders})
+def test_stream_emits_interrupt(sqlite_session_local):
+    orders = [{"order_id": "1001", "product": "猫粮", "amount": 99, "status": "已签收"}]
+    graph = FakeGraph({"__interrupt__": [_Intr({"type": "select_order", "orders": orders})]})
     svc = ChatService(graph=graph)
-    ev = asyncio.run(collect(svc.stream_chat(None, "这个能退吗")))
-    sel = [e for e in ev if e["type"] == "order_select"]
-    assert sel == [{"type": "order_select", "orders": orders}]
+    ev = asyncio.run(collect(svc.stream_chat(None, "我要退款")))
+    intr = [e for e in ev if e["type"] == "interrupt"]
+    assert intr == [{"type": "interrupt", "kind": "select_order", "orders": orders}]
+    assert not [e for e in ev if e["type"] == "done"]
 
 
-def test_order_id_passed_into_graph_input(sqlite_session_local):
-    graph = FakeGraph({"messages": [AIMessage(content="收到")]})
+def test_stream_emits_actions(sqlite_session_local):
+    graph = FakeGraph({
+        "messages": [AIMessage(content="这单可以退")],
+        "suggested_actions": [{"type": "refund_form", "draft": {"order_id": "1001"}}],
+    })
     svc = ChatService(graph=graph)
-    asyncio.run(collect(svc.stream_chat(None, "已选择订单", order_id="1001")))
-    assert graph.inputs[0][0]["order_id"] == "1001"
+    ev = asyncio.run(collect(svc.stream_chat(None, "这单能退吗")))
+    acts = [e for e in ev if e["type"] == "actions"]
+    assert acts == [{"type": "actions", "items": [{"type": "refund_form", "draft": {"order_id": "1001"}}]}]
+
+
+def test_stream_resume_sends_command(sqlite_session_local):
+    from langgraph.types import Command
+
+    graph = FakeGraph({"messages": [AIMessage(content="这单可以退")]})
+    svc = ChatService(graph=graph)
+    ev = asyncio.run(collect(svc.stream_resume("sid1", "1001")))
+    inp = graph.inputs[0][0]
+    assert isinstance(inp, Command) and inp.resume == "1001"
+    assert [e["content"] for e in ev if e["type"] == "token"] == ["这单可以退"]

@@ -59,7 +59,7 @@ CREATE TABLE tickets (
   ticket_no       VARCHAR(32)     NOT NULL                COMMENT '工单号,如 T20260701008',
   conversation_id BIGINT UNSIGNED NOT NULL                COMMENT '关联会话,可倒查当时聊了什么',
   description     TEXT            NOT NULL                COMMENT '问题描述',
-  ticket_type     ENUM('售后','投诉','咨询') NOT NULL     COMMENT '工单类型',
+  ticket_type     ENUM('售后','投诉','咨询','退款') NOT NULL COMMENT '工单类型',
   status          ENUM('待处理','已处理') NOT NULL DEFAULT '待处理' COMMENT '处理状态',
   created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (ticket_no),
@@ -147,20 +147,9 @@ CREATE TABLE faith_cases (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ch04 忠实度编造个案台账';
 
 -- =============================================================
--- ch06 · 分流器正式版 · 建表 DDL
--- 本章新建:refund_requests 一张表
--- 退款单:前端退款表单直调 /api/refunds 落地;reason 固定类目
+-- ch06 · 分流器正式版 · tickets.ticket_type 枚举加「退款」
+-- 退款单复用 tickets 表(不新建表),reason 固定类目由应用层 Literal 校验
 -- =============================================================
 SET NAMES utf8mb4;
-
-CREATE TABLE refund_requests (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '退款单主键',
-  conversation_id BIGINT UNSIGNED NOT NULL                COMMENT '关联会话',
-  order_id        VARCHAR(64)     NOT NULL                COMMENT '关联订单号',
-  reason          ENUM('7天无理由','质量问题','发错货','少件','与描述不符','其他') NOT NULL COMMENT '退款原因固定类目',
-  status          ENUM('待处理','已处理') NOT NULL DEFAULT '待处理' COMMENT '处理状态',
-  created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  PRIMARY KEY (id),
-  KEY idx_conversation_id (conversation_id),
-  CONSTRAINT fk_refunds_conversation FOREIGN KEY (conversation_id) REFERENCES conversations (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='退款申请单';
+-- 存量库迁移(幂等):tickets 枚举加「退款」,加值不动旧行
+-- ALTER TABLE tickets MODIFY COLUMN ticket_type ENUM('售后','投诉','咨询','退款') NOT NULL;

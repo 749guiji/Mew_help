@@ -31,3 +31,8 @@ def test_expand_falls_back_on_empty_queries():
 
 def test_expand_falls_back_on_missing_field():
     assert expand_queries(FakeLLM('{"foo":"bar"}'), "这个能退吗") == ["这个能退吗"]
+
+
+def test_expand_truncates_to_three():
+    r = expand_queries(FakeLLM('{"queries":["a","b","c","d","e"]}'), "这个能退吗")
+    assert r == ["a", "b", "c"]

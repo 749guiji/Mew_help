@@ -25,7 +25,7 @@ def _invoke(graph, query):
 
 
 def test_knowledge_route_forces_retrieval(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("商品咨询", 0.9))
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("商品咨询", 0.9))
     monkeypatch.setattr(
         nodes,
         "retrieve_node",
@@ -44,7 +44,7 @@ def test_knowledge_route_forces_retrieval(monkeypatch):
 
 
 def test_business_route_skips_retrieval(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("物流", 0.9))
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("物流", 0.9))
 
     async def fake_agent(state):
         return {"messages": [("assistant", "已查")], "visited": ["agent"]}
@@ -57,7 +57,7 @@ def test_business_route_skips_retrieval(monkeypatch):
 
 
 def test_complaint_returns_handoff_suggestions(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("投诉", 0.9))
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("投诉", 0.9))
 
     result = _invoke(build_graph(), "我要投诉")
 
@@ -65,17 +65,28 @@ def test_complaint_returns_handoff_suggestions(monkeypatch):
     assert "agent" not in result["visited"]
 
 
-def test_chitchat_fixed_reply(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("闲聊", 0.9))
+def test_fallback_script_fixed_reply(monkeypatch):
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("闲聊", 0.9))
 
     result = _invoke(build_graph(), "你好")
 
     assert "agent" not in result["visited"]
+    assert "script_reply" in result["visited"]
     assert result["messages"][-1].content  # 固定话术非空
 
 
+def test_other_intent_fallback_script(monkeypatch):
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("其他", 0.2))
+
+    result = _invoke(build_graph(), "帮我写首诗")
+
+    assert "agent" not in result["visited"]
+    assert "script_reply" in result["visited"]
+    assert "具体" in result["messages"][-1].content  # 其他类请说具体些
+
+
 def test_knowledge_fallback_on_low_score(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("商品咨询", 0.9))
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("商品咨询", 0.9))
     monkeypatch.setattr(
         nodes,
         "retrieve_node",
@@ -92,7 +103,7 @@ def test_two_turns_reset_per_turn_fields(monkeypatch):
     graph = build_graph()
     config = {"configurable": {"thread_id": "two-turn"}}
 
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("投诉", 0.9))
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("投诉", 0.9))
     r1 = asyncio.run(
         graph.ainvoke(
             {"messages": [("user", "我要投诉")], "raw_query": "我要投诉"},
@@ -101,7 +112,7 @@ def test_two_turns_reset_per_turn_fields(monkeypatch):
     )
     assert r1["handoff_suggestions"] == ["转人工", "建工单"]
 
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("闲聊", 0.9))
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("闲聊", 0.9))
     r2 = asyncio.run(
         graph.ainvoke(
             {"messages": [("user", "你好")], "raw_query": "你好"},

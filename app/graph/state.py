@@ -19,17 +19,16 @@ class GraphState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     raw_query: str
     resolved_query: str
+    user_id: str
     intent: str
     route: str
     retrieval_chunks: list
     retrieval_score: float | None
     confidence_pass: bool | None
     handoff_suggestions: list[str]
+    suggested_actions: list
     visited: Annotated[list[str], operator.add]
-    # ch06:退款/售后子流程与槽位
-    pending_slot: str | None
+    # ch06:退款/售后子流程(interrupt 承载槽位,无需 pending_slot)
     order_id: str | None
     order_data: dict | None
-    order_list: list
-    expanded_queries: list[str]
     intent_confidence: float | None

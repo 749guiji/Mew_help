@@ -24,6 +24,17 @@ def main() -> int:
             f"(conf={r.confidence}, expect {s['intent']})"
         )
     print(f"accuracy: {correct}/{len(samples)}")
+
+    # 多轮漂移:物流→退款→物流,当前句意图应随上下文(读历史消歧)
+    drift = [
+        ("那它现在到哪了", "用户:订单1001到哪了\n客服:已发货\n用户:那我想退了\n客服:好的帮您看下退款\n", "物流"),
+        ("那它能退吗", "用户:订单1001到哪了\n客服:已发货\n", "退款退货"),
+    ]
+    for q, hist, expect in drift:
+        r = classify_intent(llm, q, hist)
+        ok = r.intent == expect
+        print(f"{'OK  ' if ok else 'MISS'} [多轮] {q!r} -> {r.intent} (expect {expect})")
+
     return 0 if correct == len(samples) else 1
 
 

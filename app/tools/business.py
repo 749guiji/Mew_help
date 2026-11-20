@@ -7,12 +7,10 @@ from langchain_core.tools import tool
 
 @tool
 def query_order(order_id: str) -> str:
-    """根据订单号查询订单状态(支付/发货/退款等)。当用户询问某个订单的当前状态时使用。"""
+    """根据订单号查询订单状态(商品名/金额/状态/物流单号)。当用户询问某个订单的当前状态时使用。"""
     from app.orders import get_order
 
     o = get_order(order_id)
-    if o is None:
-        return f"未查到订单 {order_id}。"
     return f"订单 {order_id}:{o['product']} 金额{o['amount']} 状态:{o['status']}。"
 
 
@@ -28,3 +26,10 @@ def query_logistics(order_id: str) -> str:
     """根据订单号查询物流/包裹运输状态。当用户询问包裹到哪了、运输或配送进度时使用。"""
     statuses = ["已揽收", "运输中", "已到达派送点", "派送中", "已签收"]
     return f"订单 {order_id} 物流状态:{random.choice(statuses)}。"
+
+
+@tool
+def submit_refund(order_id: str, reason: str | None = None) -> str:
+    """判定这一单可以退款后,调用本工具发起退款申请。实际提交由前端退款表单确认后落库,
+    本工具只表示「这一单可以退,已把提交入口交给用户」。"""
+    return f"退款申请已提交:订单 {order_id}(原因待用户在前端选择)"

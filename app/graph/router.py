@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-# 七类意图 + 「其他」 → 六出口:
-#   knowledge  = 商品咨询(单查询检索 + 置信度闸)
-#   refund     = 退款退货、售后(确定性子流程:拿订单→扩写→检索政策→Agent)
-#   business   = 物流、订单、其他(直接进主力 Agent 调工具)
-#   complaint  = 投诉(安抚话术 + 转人工/建工单建议)
-#   chitchat   = 闲聊(固定话术,不花模型调用)
+# 八类意图(七类 + 「其他」) → 五出口(权威方案 §3.1):
+#   escalate        = 投诉(安抚话术 + 转人工/建工单建议)
+#   fallback_script = 闲聊、其他(script_reply 按意图分文案,零模型调用)
+#   knowledge       = 商品咨询(检索 + 置信度闸)
+#   refund_flow     = 退款退货、售后(确定性子流程:取单 interrupt→检索政策→Agent)
+#   business        = 物流、订单(直接进主力 Agent 调工具)
 _ROUTE_BY_INTENT = {
+    "投诉": "escalate",
+    "闲聊": "fallback_script",
+    "其他": "fallback_script",
     "商品咨询": "knowledge",
-    "退款退货": "refund",
+    "退款退货": "refund_flow",
+    "售后": "refund_flow",
     "物流": "business",
     "订单": "business",
-    "售后": "refund",
-    "投诉": "complaint",
-    "闲聊": "chitchat",
-    "其他": "business",
 }
 
 

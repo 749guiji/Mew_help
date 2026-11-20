@@ -105,7 +105,7 @@ def test_refund_route_injects_order_and_evidence():
     executor = FakeExecutor()
     state = {
         "messages": [HumanMessage(content="这个能退吗")],
-        "route": "refund",
+        "route": "refund_flow",
         "order_data": {"order_id": "1001", "product": "耳机", "status": "已签收"},
         "retrieval_chunks": [
             ScoredChunk(1, 0.9, "退款政策", "退款", "policy", "7天无理由退货", "")
@@ -135,6 +135,27 @@ def test_business_route_does_not_inject_refund_evidence():
 
     contents = [m.content for m in llm.last_messages if isinstance(m, HumanMessage)]
     assert not any("7天无理由" in c for c in contents)
+
+
+def test_submit_refund_intercepted_as_refund_form():
+    responses = [
+        AIMessage(
+            content="",
+            tool_calls=[{"name": "submit_refund", "args": {"order_id": "1001"}, "id": "r1"}],
+        ),
+        AIMessage(content="这单可以退"),
+    ]
+    llm = FakeLLM(responses)
+    executor = FakeExecutor()
+    state = {"messages": [HumanMessage(content="这单能退吗")], "route": "refund_flow"}
+
+    result = _run(state, llm, executor)
+
+    assert result["suggested_actions"] == [
+        {"type": "refund_form", "draft": {"order_id": "1001", "reason": None}}
+    ]
+    tms = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert any(m.name == "submit_refund" and "提交退款工单" in m.content for m in tms)
 
 
 def test_token_budget_trims_history():

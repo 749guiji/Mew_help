@@ -1,8 +1,9 @@
-"""Chat service backed by the ch05 LangGraph orchestration graph.
+"""Chat service backed by the ch06 LangGraph orchestration graph.
 
-The graph routes deterministically (intent → route) and runs the ReAct agent /
-fixed replies; this service is a thin adapter that streams SSE events from the
-graph's final state and persists messages to MySQL.
+The graph routes deterministically (intent → 5 outlets) and runs the ReAct agent /
+fixed replies; this service streams SSE events from the graph's final state and
+persists messages to MySQL. The refund sub-flow pauses via LangGraph ``interrupt``
+and resumes via ``Command(resume)`` (same ``thread_id`` = session_id).
 """
 
 import logging
@@ -10,6 +11,7 @@ from collections.abc import AsyncIterator
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage
+from langgraph.types import Command
 
 from app.db import SessionLocal
 from app.db.models import Conversation, Message
@@ -77,64 +79,96 @@ class ChatService:
         except Exception as e:
             logger.warning("Failed to save message (role=%s): %s", role, e)
 
+    async def _stream_invoke(
+        self, sid: str, invoke_input
+    ) -> AsyncIterator[dict]:
+        """ainvoke(正常或 Command(resume))后,吐本轮事件;遇中断发 interrupt 帧。"""
+        graph = self._graph if self._graph is not None else _get_graph()
+        config = {"configurable": {"thread_id": sid}}
+        before = await graph.aget_state(config)
+        before_count = len(before.values.get("messages", []))
+        if isinstance(invoke_input, dict):
+            # 把会话身份穿进图,订单选择器按会话稳定出单(Command(resume) 时已在 checkpoint)
+            invoke_input = {**invoke_input, "user_id": sid}
+        result = await graph.ainvoke(invoke_input, config=config)
+
+        # 中断帧:退款子流程缺订单号,图暂停在 fetch_order
+        intr = result.get("__interrupt__")
+        if intr:
+            payload = intr[0].value
+            yield {
+                "type": "interrupt",
+                "kind": payload.get("type", ""),
+                "orders": payload.get("orders", []),
+            }
+            return
+
+        # 只取本轮新增的消息,避免回放历史轮次的工具徽章 / 旧答案
+        new_msgs = result.get("messages", [])[before_count:]
+
+        # 工具帧(本轮 Agent 已执行完的工具,回放给前端徽章)
+        for m in new_msgs:
+            if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+                for tc in m.tool_calls:
+                    yield {"type": "tool", "name": tc["name"], "status": "done"}
+
+        # 引用帧(知识类检索块)
+        chunks = result.get("retrieval_chunks") or []
+        if chunks:
+            from app.services.generation_quality import build_citations
+
+            yield {"type": "citations", "citations": build_citations(chunks)}
+
+        # 答案帧(本轮最后一个有内容的 AIMessage)
+        answer = ""
+        for m in reversed(new_msgs):
+            if isinstance(m, AIMessage) and m.content:
+                answer = m.content
+                break
+        if answer:
+            yield {"type": "token", "content": answer}
+
+        # 转人工/建工单建议帧
+        handoff = result.get("handoff_suggestions") or []
+        if handoff:
+            yield {"type": "handoff", "suggestions": handoff}
+
+        # 动作帧(退款表单 refund_form,来自 submit_refund 拦截)
+        actions = result.get("suggested_actions") or []
+        if actions:
+            yield {"type": "actions", "items": actions}
+
+        yield {"type": "done"}
+
     async def stream_chat(
-        self, session_id: str | None, message: str, order_id: str | None = None
-    ) -> AsyncIterator[dict[str, str]]:
+        self, session_id: str | None, message: str
+    ) -> AsyncIterator[dict]:
         try:
             sid = session_id if session_id in self._sessions else uuid4().hex
             self._sessions.add(sid)
 
             yield {"type": "meta", "session_id": sid}
-
             conv_id = self._resolve_conversation(sid)
 
-            graph = self._graph if self._graph is not None else _get_graph()
-            config = {"configurable": {"thread_id": sid}}
-            before = await graph.aget_state(config)
-            before_count = len(before.values.get("messages", []))
-            result = await graph.ainvoke(
-                {"messages": [("user", message)], "raw_query": message, "order_id": order_id},
-                config=config,
-            )
-
-            # 只取本轮新增的消息,避免回放历史轮次的工具徽章 / 旧答案
-            new_msgs = result.get("messages", [])[before_count:]
-
-            # 工具帧(本轮 Agent 已执行完的工具,回放给前端徽章)
-            for m in new_msgs:
-                if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
-                    for tc in m.tool_calls:
-                        yield {"type": "tool", "name": tc["name"], "status": "done"}
-
-            # 引用帧(知识类检索块)
-            chunks = result.get("retrieval_chunks") or []
-            if chunks:
-                from app.services.generation_quality import build_citations
-
-                yield {"type": "citations", "citations": build_citations(chunks)}
-
-            # 答案帧(本轮最后一个有内容的 AIMessage)
             answer = ""
-            for m in reversed(new_msgs):
-                if isinstance(m, AIMessage) and m.content:
-                    answer = m.content
-                    break
-            if answer:
-                yield {"type": "token", "content": answer}
-
-            # 转人工/建工单建议帧
-            handoff = result.get("handoff_suggestions") or []
-            if handoff:
-                yield {"type": "handoff", "suggestions": handoff}
-
-            # 订单选择器帧(退款子流程缺订单号时下发可点选订单列表)
-            order_list = result.get("order_list") or []
-            if order_list:
-                yield {"type": "order_select", "orders": order_list}
+            async for ev in self._stream_invoke(
+                sid, {"messages": [("user", message)], "raw_query": message}
+            ):
+                if ev["type"] == "token":
+                    answer = ev["content"]
+                yield ev
 
             self._save_message(conv_id, role="user", content=message)
             self._save_message(conv_id, role="assistant", content=answer or None)
+        except Exception as e:
+            yield {"type": "error", "message": str(e)}
 
-            yield {"type": "done"}
+    async def stream_resume(
+        self, session_id: str, order_id: str
+    ) -> AsyncIterator[dict]:
+        """前端点选订单后续跑同一会话的暂停流(Command(resume) 回填订单号)。"""
+        try:
+            async for ev in self._stream_invoke(session_id, Command(resume=order_id)):
+                yield ev
         except Exception as e:
             yield {"type": "error", "message": str(e)}

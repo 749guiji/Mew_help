@@ -7,6 +7,7 @@ Agent node lives in :mod:`app.graph.agent`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -72,15 +73,17 @@ def resolve_coref(llm, query: str, history: list[str]) -> str:
     return _clean_single_line(text) or query
 
 
-def classify_intent(llm, query: str) -> IntentResult:
+def classify_intent(llm, query: str, history: str = "") -> IntentResult:
     """Classify ``query`` into one of seven intents (+「其他」) via JSON prompt.
 
-    强制 JSON + 稳健解析:解析失败或字段缺失 → ``IntentResult("其他", 0.0)``。
+    结合最近几轮历史判当前意图(应对物流→退款→物流的漂移)。强制 JSON + 稳健解析:
+    解析失败或字段缺失 → ``IntentResult("其他", 0.0)``。
     """
+    context = f"最近对话(可空):\n{history or '(无)'}\n\n当前问题:{query}"
     chain = ChatPromptTemplate.from_messages(
         [("system", INTENT_SYSTEM_PROMPT), ("human", "{input}")]
     ) | llm
-    result = chain.invoke({"input": query})
+    result = chain.invoke({"input": context})
     text = getattr(result, "content", str(result)).strip()
     data = parse_json_object(text)
     if not data:
@@ -92,15 +95,6 @@ def classify_intent(llm, query: str) -> IntentResult:
     if intent not in VALID_INTENTS:
         return IntentResult("其他", 0.0)
     return IntentResult(intent, float(confidence))
-
-
-def maybe_escalate(
-    escalate_llm, query: str, result: IntentResult, threshold: float
-) -> IntentResult:
-    """若配了大模型且置信度低于阈值,用大模型重判一次;否则原样返回。"""
-    if escalate_llm is None or result.confidence >= threshold:
-        return result
-    return classify_intent(escalate_llm, query)
 
 
 def expand_queries(llm, query: str) -> list[str]:
@@ -118,7 +112,7 @@ def expand_queries(llm, query: str) -> list[str]:
     if not isinstance(queries, list) or not queries:
         return [query]
     cleaned = [q for q in queries if isinstance(q, str) and q.strip()]
-    return cleaned or [query]
+    return cleaned[:3] or [query]
 
 
 def gate_pass(score: float | None, threshold: float) -> bool:
@@ -183,16 +177,6 @@ def complaint_node(state) -> dict:
     }
 
 
-def chitchat_node(state) -> dict:
-    """闲聊:固定话术,不花模型调用。"""
-    from langchain_core.messages import AIMessage
-
-    return {
-        "messages": [AIMessage(content="您好呀，我是客服助手，请问有什么可以帮您的？")],
-        "visited": ["chitchat"],
-    }
-
-
 def log_node(state) -> dict:
     """日志记录:把本次路径 + 意图 + 分流写进日志(供验收#1)。"""
     import logging
@@ -204,3 +188,61 @@ def log_node(state) -> dict:
         state.get("route"),
     )
     return {"visited": ["log"]}
+
+
+_ORDER_RE = re.compile(r"(?:订单|单号|尾号)\s*(\d{4,})")
+
+
+def _extract_order_id(text: str) -> str | None:
+    """从文本抽订单号;抽不到返回 None。
+
+    要求「订单/单号/尾号」上下文前缀,避免把「我1200买的」这种金额当成订单号
+    (缺单不猜不编——抽不到就走 interrupt 让用户点选,不 fabricate 订单)。
+    """
+    m = _ORDER_RE.search(text or "")
+    return m.group(1) if m else None
+
+
+def fetch_order(state) -> dict:
+    """退款子流程第一步:抽订单号;缺则 ``interrupt`` 弹订单选择器等前端点选;拿到后取订单数据。
+
+    ``interrupt`` 之前只做只读(resume 时本节点从头重跑,不能有副作用)。
+    """
+    from langgraph.types import interrupt
+
+    from app.orders import list_user_orders, order_snapshot
+
+    oid = state.get("order_id") or _extract_order_id(
+        state.get("resolved_query") or state.get("raw_query", "")
+    )
+    if not oid:
+        orders = list_user_orders(state.get("user_id") or "guest")
+        oid = interrupt({"type": "select_order", "orders": orders})
+    return {"order_id": oid, "order_data": order_snapshot(oid), "visited": ["fetch_order"]}
+
+
+def retrieve_policy(state) -> dict:
+    """退款子流程强制检索政策:Query 扩写 3 条 → 多 query 检索 → 去重合并。"""
+    from app.core.config import get_settings
+    from app.core.llm import get_llm
+    from app.kb.retrieval import retrieve_multi
+
+    q = state.get("resolved_query") or state.get("raw_query") or ""
+    queries = expand_queries(get_llm(get_settings()), q)
+    chunks = retrieve_multi(queries)
+    score = max((c.score for c in chunks), default=None) if chunks else None
+    return {"retrieval_chunks": chunks, "retrieval_score": score, "visited": ["retrieve_policy"]}
+
+
+def script_reply(state) -> dict:
+    """闲聊/其他 兜底话术(零模型):按 intent 分文案——闲聊引回产品,其他请说具体些。
+
+    分流后立即命中、不进 Agent;与知识路证据弱的 ``fallback_node`` 是两码事。
+    """
+    from langchain_core.messages import AIMessage
+
+    if state.get("intent") == "其他":
+        text = "抱歉，我不太确定您的意思。您可以把问题说得更具体些吗？比如您想咨询的商品、某个订单，或退款/售后问题。"
+    else:
+        text = "我暂时还不会回答这个，请告诉我您对我们产品的任何咨询~商品、订单、物流、售后都可以问我哦。"
+    return {"messages": [AIMessage(content=text)], "visited": ["script_reply"]}
