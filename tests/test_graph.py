@@ -65,13 +65,24 @@ def test_complaint_returns_handoff_suggestions(monkeypatch):
     assert "agent" not in result["visited"]
 
 
-def test_chitchat_fixed_reply(monkeypatch):
+def test_fallback_script_fixed_reply(monkeypatch):
     monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("闲聊", 0.9))
 
     result = _invoke(build_graph(), "你好")
 
     assert "agent" not in result["visited"]
+    assert "script_reply" in result["visited"]
     assert result["messages"][-1].content  # 固定话术非空
+
+
+def test_other_intent_fallback_script(monkeypatch):
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q, h="": IntentResult("其他", 0.2))
+
+    result = _invoke(build_graph(), "帮我写首诗")
+
+    assert "agent" not in result["visited"]
+    assert "script_reply" in result["visited"]
+    assert "具体" in result["messages"][-1].content  # 其他类请说具体些
 
 
 def test_knowledge_fallback_on_low_score(monkeypatch):

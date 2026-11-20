@@ -1,8 +1,9 @@
-"""Slot/pause/resume tests for the ch06 refund sub-flow."""
+"""Interrupt/resume tests for the ch06 refund sub-flow (fetch_order)."""
 
 import asyncio
 
 import pytest
+from langgraph.types import Command
 
 from app.graph import agent, nodes
 from app.graph.build import build_graph
@@ -30,85 +31,63 @@ def _chunks():
     return [ScoredChunk(1, 0.9, "退款政策", "退款", "policy", "7天无理由退货", "")]
 
 
-def _run_turns(graph, turns, thread="t"):
+def _invoke(graph, query, thread):
     config = {"configurable": {"thread_id": thread}}
-    results = []
-    for query, order_id in turns:
-        payload = {"messages": [("user", query)], "raw_query": query}
-        if order_id is not None:
-            payload["order_id"] = order_id
-        results.append(asyncio.run(graph.ainvoke(payload, config=config)))
-    return results
+    return asyncio.run(
+        graph.ainvoke({"messages": [("user", query)], "raw_query": query}, config)
+    )
 
 
-def test_refund_without_order_id_pauses(monkeypatch):
+def _resume(graph, order_id, thread):
+    config = {"configurable": {"thread_id": thread}}
+    return asyncio.run(graph.ainvoke(Command(resume=order_id), config))
+
+
+def test_refund_without_order_id_interrupts(monkeypatch):
     import app.kb.retrieval as retrieval_mod
 
     monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: _chunks())
     monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
 
-    result = _run_turns(build_graph(), [("这个能退吗", None)])[0]
+    result = _invoke(build_graph(), "我要退款", "t-interrupt")
 
-    assert result["pending_slot"] == "order_id"
-    assert len(result["order_list"]) >= 2
-    assert "请选择" in result["messages"][-1].content
-    assert "agent" not in result["visited"]
+    intr = result.get("__interrupt__")
+    assert intr and intr[0].value["type"] == "select_order"
+    assert len(intr[0].value["orders"]) >= 2
+    assert "agent" not in result.get("visited", [])
 
 
-def test_refund_pause_then_resume(monkeypatch):
+def test_refund_interrupt_then_resume(monkeypatch):
     import app.kb.retrieval as retrieval_mod
 
     monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: _chunks())
-    monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
-
-    r1, r2 = _run_turns(build_graph(), [("这个能退吗", None), ("已选择订单", "1001")])
-
-    assert r1["pending_slot"] == "order_id"
-    assert r2["expanded_queries"] == ["退款政策", "退货条件"]
-    assert len(r2["retrieval_chunks"]) == 1
-    assert r2["order_data"]["order_id"] == "1001"
-    assert "agent" in r2["visited"]
-    assert r2["order_id"] is None
-    assert r2["pending_slot"] is None
-
-
-def test_refund_abandon_clears_order_id(monkeypatch):
-    import app.kb.retrieval as retrieval_mod
-
-    monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: [])
     monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
 
     graph = build_graph()
-    r1 = _run_turns(graph, [("这个能退吗", None)])[0]
-    assert r1["pending_slot"] == "order_id"
+    r1 = _invoke(graph, "我要退款", "t-resume")
+    order_id = r1["__interrupt__"][0].value["orders"][0]["order_id"]
 
-    monkeypatch.setattr(
-        nodes, "classify_intent", lambda llm, q, h="": IntentResult("物流", 0.9)
-    )
-    r2 = _run_turns(graph, [("物流到哪了", None)])[0]
+    r2 = _resume(graph, order_id, "t-resume")
 
-    assert r2["order_id"] is None
-    assert r2["pending_slot"] is None
-    assert r2["route"] == "business"
+    assert "fetch_order" in r2["visited"]
+    assert "retrieve_policy" in r2["visited"]
     assert "agent" in r2["visited"]
+    assert r2["order_data"]["order_id"] == order_id
+    assert len(r2["retrieval_chunks"]) == 1
 
 
-def test_refund_second_time_reprompts(monkeypatch):
+def test_refund_with_order_id_in_query_no_interrupt(monkeypatch):
     import app.kb.retrieval as retrieval_mod
 
     monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: _chunks())
     monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
 
-    r1, r2, r3 = _run_turns(
-        build_graph(),
-        [("这个能退吗", None), ("已选择订单", "1001"), ("这个还能退吗", None)],
-    )
+    result = _invoke(build_graph(), "订单1001能退吗", "t-with-id")
 
-    assert r1["pending_slot"] == "order_id"
-    assert r2["order_id"] is None
-    assert r3["pending_slot"] == "order_id"
-    assert r3["order_id"] is None
-    assert len(r3["order_list"]) >= 2
+    assert "__interrupt__" not in result
+    assert "fetch_order" in result["visited"]
+    assert result["order_id"] == "1001"
+    assert "agent" in result["visited"]
 
 
 def test_refund_zero_chunks_falls_back(monkeypatch):
@@ -117,24 +96,22 @@ def test_refund_zero_chunks_falls_back(monkeypatch):
     monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: [])
     monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
 
-    r1, r2 = _run_turns(build_graph(), [("这个能退吗", None), ("已选择订单", "1001")])
+    result = _invoke(build_graph(), "订单1001能退吗", "t-fallback")
 
-    assert "fallback" in r2["visited"]
-    assert "agent" not in r2["visited"]
+    assert "fallback" in result["visited"]
+    assert "agent" not in result["visited"]
 
 
-def test_order_id_without_pending_subflow_does_not_crash(monkeypatch):
+def test_refund_second_time_reinterrupts(monkeypatch):
     import app.kb.retrieval as retrieval_mod
 
     monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: _chunks())
     monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
 
     graph = build_graph()
-    payload = {"messages": [("user", "查订单")], "raw_query": "查订单", "order_id": "1001"}
-    result = asyncio.run(
-        graph.ainvoke(payload, config={"configurable": {"thread_id": "fresh"}})
-    )
+    r1 = _invoke(graph, "我要退款", "t-second")
+    oid = r1["__interrupt__"][0].value["orders"][0]["order_id"]
+    _resume(graph, oid, "t-second")
 
-    # 无挂起子流程却带 order_id:当作普通新问题走 coref/intent,不崩
-    assert "coref" in result["visited"]
-    assert "intent" in result["visited"]
+    r3 = _invoke(graph, "再退另一单", "t-second")
+    assert r3.get("__interrupt__")  # 重新弹选择器,不复用旧 order_id

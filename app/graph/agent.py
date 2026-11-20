@@ -56,7 +56,7 @@ async def react_agent_node(
         history.append(
             HumanMessage(content=f"请仅依据以下知识片段回答用户问题:\n{evidence}")
         )
-    if state.get("route") == "refund":
+    if state.get("route") == "refund_flow":
         parts = [
             "请判断这一单能否退款/退货,依据政策条款和订单状态作答,不得承诺退款金额或到账时间。"
         ]

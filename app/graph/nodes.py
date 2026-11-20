@@ -7,6 +7,7 @@ Agent node lives in :mod:`app.graph.agent`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -197,3 +198,61 @@ def log_node(state) -> dict:
         state.get("route"),
     )
     return {"visited": ["log"]}
+
+
+_ORDER_RE = re.compile(r"(?<!\d)\d{4,}(?!\d)")
+
+
+def _extract_order_id(text: str) -> str | None:
+    """从文本抽 4+ 位连续数字视作订单号;抽不到返回 None。
+
+    用 ``(?<!\\d)...(?!\\d)`` 而非 ``\\b``:Python 里中文也是 ``\\w``,
+    ``\\b1001\\b`` 对「订单1001」这类中文紧邻数字的文本匹配不到。
+    """
+    m = _ORDER_RE.search(text or "")
+    return m.group(0) if m else None
+
+
+def fetch_order(state) -> dict:
+    """退款子流程第一步:抽订单号;缺则 ``interrupt`` 弹订单选择器等前端点选;拿到后取订单数据。
+
+    ``interrupt`` 之前只做只读(resume 时本节点从头重跑,不能有副作用)。
+    """
+    from langgraph.types import interrupt
+
+    from app.orders import list_user_orders, order_snapshot
+
+    oid = state.get("order_id") or _extract_order_id(
+        state.get("resolved_query") or state.get("raw_query", "")
+    )
+    if not oid:
+        orders = list_user_orders(state.get("user_id") or "guest")
+        oid = interrupt({"type": "select_order", "orders": orders})
+    return {"order_id": oid, "order_data": order_snapshot(oid), "visited": ["fetch_order"]}
+
+
+def retrieve_policy(state) -> dict:
+    """退款子流程强制检索政策:Query 扩写 3 条 → 多 query 检索 → 去重合并。"""
+    from app.core.config import get_settings
+    from app.core.llm import get_llm
+    from app.kb.retrieval import retrieve_multi
+
+    q = state.get("resolved_query") or state.get("raw_query") or ""
+    queries = expand_queries(get_llm(get_settings()), q)
+    chunks = retrieve_multi(queries)
+    score = max((c.score for c in chunks), default=None) if chunks else None
+    return {"retrieval_chunks": chunks, "retrieval_score": score, "visited": ["retrieve_policy"]}
+
+
+def script_reply(state) -> dict:
+    """闲聊/其他 兜底话术(零模型):按 intent 分文案——闲聊引回产品,其他请说具体些。
+
+    分流后立即命中、不进 Agent;与知识路证据弱的 ``fallback_node`` 是两码事。
+    """
+    from langchain_core.messages import AIMessage
+
+    if state.get("intent") == "其他":
+        text = "抱歉，我不太确定您的意思。您可以把问题说得更具体些吗？比如您想咨询的商品、某个订单，或退款/售后问题。"
+    else:
+        text = "我暂时还不会回答这个，请告诉我您对我们产品的任何咨询~商品、订单、物流、售后都可以问我哦。"
+    return {"messages": [AIMessage(content=text)], "visited": ["script_reply"]}

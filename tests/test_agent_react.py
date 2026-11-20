@@ -105,7 +105,7 @@ def test_refund_route_injects_order_and_evidence():
     executor = FakeExecutor()
     state = {
         "messages": [HumanMessage(content="这个能退吗")],
-        "route": "refund",
+        "route": "refund_flow",
         "order_data": {"order_id": "1001", "product": "耳机", "status": "已签收"},
         "retrieval_chunks": [
             ScoredChunk(1, 0.9, "退款政策", "退款", "policy", "7天无理由退货", "")
