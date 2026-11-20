@@ -206,8 +206,10 @@ function dispatch(evt, ctx) {
     ctx.citations = evt.citations || [];
   } else if (evt.type === "handoff") {
     renderHandoff(evt.suggestions || [], ctx.contentEl);
-  } else if (evt.type === "order_select") {
+  } else if (evt.type === "interrupt") {
     renderOrderCards(evt.orders || [], ctx.contentEl);
+  } else if (evt.type === "actions") {
+    renderActions(evt.items || [], ctx.contentEl);
   } else if (evt.type === "error") {
     ctx.textSpan.textContent += "\n[出错了] " + evt.message;
     scrollToBottom();
@@ -231,10 +233,8 @@ function handleSSE(chunk, ctx) {
   }
 }
 
-async function postMessage(text, { order_id = null, after = null } = {}) {
-  appendBubble("user", text);
-  const contentEl = appendBubble("assistant", "");
-
+// 通用 SSE 流式:fetch 后把事件 dispatch 进给定的助手气泡。
+async function streamTo(fetchUrl, body, contentEl) {
   const badgeEl = document.createElement("div");
   badgeEl.className = "tool-badge";
   contentEl.appendChild(badgeEl);
@@ -260,9 +260,7 @@ async function postMessage(text, { order_id = null, after = null } = {}) {
 
   setStreaming(true);
   try {
-    const body = { message: text, session_id: state.sessionId };
-    if (order_id) body.order_id = order_id;
-    const res = await fetch("/chat", {
+    const res = await fetch(fetchUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -287,7 +285,6 @@ async function postMessage(text, { order_id = null, after = null } = {}) {
     if (ctx.citations.length) linkifyCitations(textSpan, ctx.citations);
     addFeedback(contentEl);
     scrollToBottom();
-    if (after) after(contentEl);
   }
 }
 
@@ -295,10 +292,12 @@ function send() {
   const text = inputEl.value.trim();
   if (!text || state.streaming) return;
   inputEl.value = "";
-  postMessage(text, {});
+  appendBubble("user", text);
+  const contentEl = appendBubble("assistant", "");
+  streamTo("/chat", { message: text, session_id: state.sessionId }, contentEl);
 }
 
-// 订单选择卡片:order_select 事件渲染,点选后回填 order_id 并续跑子流程。
+// 订单选择卡片:interrupt 事件渲染,点选后 /api/actions/resume 续跑子流程。
 function renderOrderCards(orders, contentEl) {
   if (!orders || !orders.length) return;
   const wrap = document.createElement("div");
@@ -339,13 +338,24 @@ function removeOrderCards() {
 async function selectOrder(order) {
   if (state.streaming) return;
   removeOrderCards();
-  await postMessage("已选择订单 " + order.order_id, {
-    order_id: order.order_id,
-    after: (contentEl) => renderRefundForm(contentEl, order.order_id),
-  });
+  const contentEl = appendBubble("assistant", "");
+  await streamTo(
+    "/api/actions/resume",
+    { session_id: state.sessionId, order_id: order.order_id },
+    contentEl
+  );
 }
 
-const REFUND_REASONS = ["7天无理由", "质量问题", "发错货", "少件", "与描述不符", "其他"];
+// 动作帧:refund_form → 渲染退款表单(submit_refund 工具拦截的产物)。
+function renderActions(items, contentEl) {
+  for (const a of items) {
+    if (a.type === "refund_form") {
+      renderRefundForm(contentEl, a.draft.order_id);
+    }
+  }
+}
+
+const REFUND_REASONS = ["七天无理由", "质量问题", "发错货", "不想要了", "其他"];
 
 function renderRefundForm(contentEl, orderId) {
   const form = document.createElement("div");
@@ -390,7 +400,7 @@ function renderRefundForm(contentEl, orderId) {
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     try {
-      const res = await fetch("/api/refunds", {
+      const res = await fetch("/api/actions/create-refund", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -400,8 +410,8 @@ function renderRefundForm(contentEl, orderId) {
         }),
       });
       if (res.ok) {
-        const { refund_id } = await res.json();
-        btn.textContent = "已提交退款单 #" + refund_id;
+        const { ticket_no } = await res.json();
+        btn.textContent = "已提交退款单 " + ticket_no;
       } else {
         btn.textContent = "提交失败";
       }
