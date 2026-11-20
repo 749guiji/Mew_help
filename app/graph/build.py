@@ -29,16 +29,19 @@ def _reset_node(state: GraphState) -> dict:
 
 
 def _history_text(state: GraphState) -> str:
-    """把最近几轮消息压成紧凑文本,供意图识别读上下文消歧。"""
-    msgs = [m for m in state.get("messages", []) if getattr(m, "content", None)]
-    return "\n".join(str(m.content) for m in msgs)
+    """coref/意图共用的历史:摘要行 + 最近几轮滑窗(每轮必打 history_ctx)。"""
+    from app.graph.context import assemble_history_context
+    from app.graph.context_meta import load_context_meta
+
+    summary_text, _, _ = load_context_meta(state.get("conversation_id"))
+    return assemble_history_context(state.get("messages", []), summary_text=summary_text)
 
 
 def _coref_node(state: GraphState) -> dict:
     from app.core.config import get_settings
     from app.core.llm import get_llm
 
-    history = [m.content for m in state.get("messages", []) if getattr(m, "content", None)]
+    history = [line for line in _history_text(state).split("\n") if line]
     resolved = nodes.resolve_coref(get_llm(get_settings()), state["raw_query"], history)
     return {"resolved_query": resolved, "visited": ["coref"]}
 
