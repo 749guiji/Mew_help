@@ -2,8 +2,16 @@
 
 import asyncio
 
+import pytest
+
 from app.graph import agent, nodes
 from app.graph.build import build_graph
+
+
+@pytest.fixture(autouse=True)
+def _no_real_coref(monkeypatch):
+    """ch06 起 resolve_coref 走 LLM;图测试只关心路由,原样透传避开真模型。"""
+    monkeypatch.setattr(nodes, "resolve_coref", lambda llm, q, h: q)
 
 
 def _invoke(graph, query):

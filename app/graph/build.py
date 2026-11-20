@@ -24,10 +24,14 @@ def _reset_node(state: GraphState) -> dict:
 
 
 def _coref_node(state: GraphState) -> dict:
-    return {
-        "resolved_query": nodes.resolve_coref(state["raw_query"]),
-        "visited": ["coref"],
-    }
+    from app.core.config import get_settings
+    from app.core.llm import get_llm
+
+    history = [
+        m.content for m in state.get("messages", []) if getattr(m, "content", None)
+    ]
+    resolved = nodes.resolve_coref(get_llm(get_settings()), state["raw_query"], history)
+    return {"resolved_query": resolved, "visited": ["coref"]}
 
 
 def _intent_node(state: GraphState) -> dict:
