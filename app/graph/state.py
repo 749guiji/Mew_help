@@ -20,6 +20,7 @@ class GraphState(TypedDict, total=False):
     raw_query: str
     resolved_query: str
     user_id: str
+    conversation_id: int | None
     intent: str
     route: str
     retrieval_chunks: list

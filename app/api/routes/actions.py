@@ -18,10 +18,10 @@ router = APIRouter()
 
 
 class ResumeRequest(BaseModel):
-    session_id: str
+    conversation_id: int
     order_id: str
 
-    @field_validator("session_id", "order_id")
+    @field_validator("order_id")
     @classmethod
     def _not_blank(cls, v: str) -> str:
         v = v.strip()
@@ -50,7 +50,7 @@ async def resume(payload: ResumeRequest, request: Request) -> StreamingResponse:
     svc = request.app.state.chat_service
 
     async def gen():
-        async for event in svc.stream_resume(payload.session_id, payload.order_id):
+        async for event in svc.stream_resume(payload.conversation_id, payload.order_id):
             yield f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")

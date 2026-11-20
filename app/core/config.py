@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     hybrid_dense_top_k: int = 50
     hybrid_sparse_top_k: int = 50
     rerank_use_fp16: bool = True
+    # ch07 上下文预算(字数口径)
+    model_context_window: int = 32768
+    max_output_tokens: int = 2000
+    max_user_input_tokens: int = 2000
+    max_agent_steps: int = 3
+    tool_result_max_tokens: int = 1200
+    chars_per_token: float = 1.0
+    summary_target_chars: int = 200
+    desired_rounds: int = 20
     # 意图识别专用模型(默认跟随主模型;配了更小/更强的模型才触发升级路)
     intent_model: str | None = None
     intent_model_base_url: str | None = None

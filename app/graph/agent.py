@@ -50,12 +50,30 @@ async def react_agent_node(
     if token_budget is None:
         token_budget = get_settings().max_history_tokens
 
-    history = [SystemMessage(content=SYSTEM_PROMPT), *state.get("messages", [])]
+    from app.graph.context import assemble_model_context, split_layers
+    from app.graph.context_meta import load_context_meta
+
+    summary_text, summary_upto_pos, layer1_from_pos = load_context_meta(
+        state.get("conversation_id")
+    )
+
+    # 降级接线:层1超预算上移锚点、层2超预算后台起摘要
+    from app.core.degradation import apply_degradation
+
+    _l2, _l1, _ = split_layers(
+        state.get("messages", []),
+        summary_upto_pos=summary_upto_pos,
+        layer1_from_pos=layer1_from_pos,
+    )
+    apply_degradation(
+        state.get("conversation_id"),
+        sum(len(m.content or "") for m in _l1),
+        sum(len(m.content or "") for m in _l2),
+    )
+
+    evidence = ""
     if state.get("route") == "knowledge" and state.get("retrieval_chunks"):
-        evidence = _format_evidence(state["retrieval_chunks"])
-        history.append(
-            HumanMessage(content=f"请仅依据以下知识片段回答用户问题:\n{evidence}")
-        )
+        evidence = f"请仅依据以下知识片段回答用户问题:\n{_format_evidence(state['retrieval_chunks'])}"
     if state.get("route") == "refund_flow":
         parts = [
             "请判断这一单能否退款/退货,依据政策条款和订单状态作答,不得承诺退款金额或到账时间。"
@@ -66,7 +84,15 @@ async def react_agent_node(
             parts.append(f"订单信息:{order}")
         if state.get("retrieval_chunks"):
             parts.append(f"政策条款:\n{_format_evidence(state['retrieval_chunks'])}")
-        history.append(HumanMessage(content="\n\n".join(parts)))
+        evidence = "\n\n".join(parts)
+
+    history = assemble_model_context(
+        state.get("messages", []),
+        summary_text=summary_text,
+        evidence=evidence,
+        summary_upto_pos=summary_upto_pos,
+        layer1_from_pos=layer1_from_pos,
+    )
     if len(history) == 1:  # 只有 system message,没有用户消息
         history.append(HumanMessage(content=state.get("resolved_query", "")))
 

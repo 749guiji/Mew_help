@@ -1,4 +1,8 @@
-const state = { sessionId: null, streaming: false };
+const state = { userId: localStorage.getItem("mew_user_id"), conversationId: null, streaming: false };
+if (!state.userId) {
+  state.userId = "u-" + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem("mew_user_id", state.userId);
+}
 let sseBuffer = "";
 
 const messagesEl = document.getElementById("messages");
@@ -191,7 +195,7 @@ function addFeedback(contentEl) {
 
 function dispatch(evt, ctx) {
   if (evt.type === "meta") {
-    state.sessionId = evt.session_id;
+    state.conversationId = parseInt(evt.session_id, 10);
   } else if (evt.type === "token") {
     if (ctx.typing) {
       ctx.typing.remove();
@@ -294,7 +298,11 @@ function send() {
   inputEl.value = "";
   appendBubble("user", text);
   const contentEl = appendBubble("assistant", "");
-  streamTo("/chat", { message: text, session_id: state.sessionId }, contentEl);
+  streamTo(
+    "/chat",
+    { message: text, user_id: state.userId, conversation_id: state.conversationId },
+    contentEl
+  );
 }
 
 // 订单选择卡片:interrupt 事件渲染,点选后 /api/actions/resume 续跑子流程。
@@ -341,7 +349,7 @@ async function selectOrder(order) {
   const contentEl = appendBubble("assistant", "");
   await streamTo(
     "/api/actions/resume",
-    { session_id: state.sessionId, order_id: order.order_id },
+    { conversation_id: state.conversationId, order_id: order.order_id },
     contentEl
   );
 }
@@ -441,3 +449,51 @@ citeCloseEl.addEventListener("click", closeCitation);
 citeModal.addEventListener("click", (e) => {
   if (e.target === citeModal) closeCitation();
 });
+
+// 会话侧栏:列用户会话、切换回载、新对话;加载失败静默降级不影响聊天。
+async function loadConversations() {
+  try {
+    const res = await fetch("/api/conversations?user_id=" + encodeURIComponent(state.userId));
+    if (!res.ok) return;
+    const { conversations } = await res.json();
+    const el = document.getElementById("conversations");
+    el.innerHTML = "";
+    for (const c of conversations) {
+      const item = document.createElement("button");
+      item.className = "conv-item" + (c.id === state.conversationId ? " active" : "");
+      item.type = "button";
+      item.textContent = (c.summarized ? "📄 " : "") + (c.preview || "（新对话）");
+      item.addEventListener("click", () => switchConversation(c.id));
+      el.appendChild(item);
+    }
+  } catch (err) {
+    /* 静默降级 */
+  }
+}
+
+async function switchConversation(id) {
+  state.conversationId = id;
+  document.getElementById("messages").innerHTML = "";
+  try {
+    const res = await fetch("/api/conversations/" + id + "/messages");
+    if (res.ok) {
+      const { messages } = await res.json();
+      for (const m of messages) {
+        if (m.role === "user") appendBubble("user", m.content);
+        else if (m.role === "assistant") appendBubble("assistant", m.content);
+      }
+    }
+  } catch (err) {
+    /* 静默降级 */
+  }
+  loadConversations();
+}
+
+function newConversation() {
+  state.conversationId = null;
+  document.getElementById("messages").innerHTML = "";
+  loadConversations();
+}
+
+document.getElementById("new-chat").addEventListener("click", newConversation);
+loadConversations();

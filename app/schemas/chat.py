@@ -3,7 +3,8 @@ from pydantic import BaseModel, field_validator
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: str | None = None
+    user_id: str | None = None
+    conversation_id: int | None = None
 
     @field_validator("message")
     @classmethod
