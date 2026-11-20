@@ -111,7 +111,7 @@ def expand_queries(llm, query: str) -> list[str]:
     if not isinstance(queries, list) or not queries:
         return [query]
     cleaned = [q for q in queries if isinstance(q, str) and q.strip()]
-    return cleaned or [query]
+    return cleaned[:3] or [query]
 
 
 def gate_pass(score: float | None, threshold: float) -> bool:
