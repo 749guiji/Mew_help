@@ -126,12 +126,12 @@ def test_business_emits_tool_frames(sqlite_session_local):
 def test_second_turn_uses_same_thread_id(sqlite_session_local):
     graph = FakeGraph({"messages": [AIMessage(content="收到")]})
     svc = ChatService(graph=graph)
-    e1 = asyncio.run(collect(svc.stream_chat(None, "第一句")))
-    sid = e1[0]["session_id"]
-    asyncio.run(collect(svc.stream_chat(sid, "第二句")))
-    # 两次都用同一个 thread_id(会话记忆)
-    assert graph.inputs[0][1]["configurable"]["thread_id"] == sid
-    assert graph.inputs[1][1]["configurable"]["thread_id"] == sid
+    e1 = asyncio.run(collect(svc.stream_chat("u1", "第一句")))
+    conv_id = e1[0]["session_id"]
+    asyncio.run(collect(svc.stream_chat("u1", "第二句", conversation_id=int(conv_id))))
+    # 两次都用同一个 thread_id(thread_id = conversation_id)
+    assert graph.inputs[0][1]["configurable"]["thread_id"] == conv_id
+    assert graph.inputs[1][1]["configurable"]["thread_id"] == conv_id
 
 
 def test_unknown_session_id_starts_fresh():

@@ -31,11 +31,11 @@ def test_chat_sse_stream():
     assert "text/event-stream" in r.headers["content-type"]
     assert '"type":"token"' in r.text and '"type":"done"' in r.text
 
-def test_chat_passes_session_id():
+def test_chat_passes_user_id():
     fake = FakeChatService()
     app = create_app(chat_service=fake)
     with TestClient(app) as c:
-        c.post("/chat", json={"session_id": "abc", "message": "hi"})
+        c.post("/chat", json={"user_id": "abc", "message": "hi"})
     assert fake.last[0] == "abc"
 
 def test_chat_empty_message_422():

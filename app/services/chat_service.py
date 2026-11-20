@@ -35,23 +35,37 @@ class ChatService:
         self._graph = graph  # injected for tests
         self._sessions: set[str] = set()
 
-    def _resolve_conversation(self, sid: str) -> int | None:
+    def _resolve_conversation(self, user_id: str, conversation_id: int | None = None) -> int | None:
+        """按 user_id 建/查会话;给定 conversation_id 则续用(thread_id=conversation_id)。"""
         try:
             with SessionLocal() as s:
-                conv = (
-                    s.query(Conversation)
-                    .filter(Conversation.user_id == sid)
-                    .first()
-                )
-                if conv is None:
-                    conv = Conversation(user_id=sid, status="进行中")
-                    s.add(conv)
-                    s.commit()
-                    s.refresh(conv)
+                if conversation_id is not None:
+                    conv = s.get(Conversation, conversation_id)
+                    if conv is not None and conv.user_id == user_id:
+                        return conv.id
+                conv = Conversation(user_id=user_id, status="进行中")
+                s.add(conv)
+                s.commit()
+                s.refresh(conv)
                 return conv.id
         except Exception as e:
-            logger.warning("Failed to resolve/create conversation for %s: %s", sid, e)
+            logger.warning("Failed to resolve/create conversation for %s: %s", user_id, e)
             return None
+
+    def _load_history(self, conv_id: int) -> list:
+        """回灌会话历史(user/assistant 原文,工具结果不落表故不含)。"""
+        try:
+            with SessionLocal() as s:
+                rows = (
+                    s.query(Message)
+                    .filter(Message.conversation_id == conv_id)
+                    .order_by(Message.id)
+                    .all()
+                )
+                return [(m.role, m.content) for m in rows if m.content]
+        except Exception as e:
+            logger.warning("Failed to load history conv=%s: %s", conv_id, e)
+            return []
 
     def _save_message(
         self,
@@ -80,16 +94,30 @@ class ChatService:
             logger.warning("Failed to save message (role=%s): %s", role, e)
 
     async def _stream_invoke(
-        self, sid: str, invoke_input
+        self, conv_id: int, user_id: str, invoke_input
     ) -> AsyncIterator[dict]:
-        """ainvoke(正常或 Command(resume))后,吐本轮事件;遇中断发 interrupt 帧。"""
+        """ainvoke(正常或 Command(resume))后,吐本轮事件;遇中断发 interrupt 帧。
+
+        thread_id=conversation_id;checkpoint 空则从 MySQL 回灌 user/assistant 历史。
+        """
         graph = self._graph if self._graph is not None else _get_graph()
-        config = {"configurable": {"thread_id": sid}}
-        before = await graph.aget_state(config)
-        before_count = len(before.values.get("messages", []))
+        config = {"configurable": {"thread_id": str(conv_id)}}
         if isinstance(invoke_input, dict):
-            # 把会话身份穿进图,订单选择器按会话稳定出单(Command(resume) 时已在 checkpoint)
-            invoke_input = {**invoke_input, "user_id": sid}
+            invoke_input = {
+                **invoke_input,
+                "user_id": user_id,
+                "conversation_id": conv_id,
+            }
+            before = await graph.aget_state(config)
+            if not before.values.get("messages"):
+                # 空 checkpoint(切会话/重启)→ 回灌历史
+                invoke_input["messages"] = (
+                    self._load_history(conv_id) + invoke_input.get("messages", [])
+                )
+            before_count = len(before.values.get("messages", []))
+        else:
+            before = await graph.aget_state(config)
+            before_count = len(before.values.get("messages", []))
         result = await graph.ainvoke(invoke_input, config=config)
 
         # 中断帧:退款子流程缺订单号,图暂停在 fetch_order
@@ -141,18 +169,16 @@ class ChatService:
         yield {"type": "done"}
 
     async def stream_chat(
-        self, session_id: str | None, message: str
+        self, user_id: str | None, message: str, conversation_id: int | None = None
     ) -> AsyncIterator[dict]:
         try:
-            sid = session_id if session_id in self._sessions else uuid4().hex
-            self._sessions.add(sid)
-
-            yield {"type": "meta", "session_id": sid}
-            conv_id = self._resolve_conversation(sid)
+            user_id = user_id or uuid4().hex
+            conv_id = self._resolve_conversation(user_id, conversation_id)
+            yield {"type": "meta", "session_id": str(conv_id)}
 
             answer = ""
             async for ev in self._stream_invoke(
-                sid, {"messages": [("user", message)], "raw_query": message}
+                conv_id, user_id, {"messages": [("user", message)], "raw_query": message}
             ):
                 if ev["type"] == "token":
                     answer = ev["content"]
@@ -164,11 +190,14 @@ class ChatService:
             yield {"type": "error", "message": str(e)}
 
     async def stream_resume(
-        self, session_id: str, order_id: str
+        self, conversation_id: int, order_id: str
     ) -> AsyncIterator[dict]:
         """前端点选订单后续跑同一会话的暂停流(Command(resume) 回填订单号)。"""
         try:
-            async for ev in self._stream_invoke(session_id, Command(resume=order_id)):
+            with SessionLocal() as s:
+                conv = s.get(Conversation, conversation_id)
+                user_id = conv.user_id if conv else "guest"
+            async for ev in self._stream_invoke(conversation_id, user_id, Command(resume=order_id)):
                 yield ev
         except Exception as e:
             yield {"type": "error", "message": str(e)}
