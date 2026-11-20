@@ -9,6 +9,7 @@ from app.api.routes import extract as extract_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import kb as kb_routes
 from app.api.routes import actions as actions_routes
+from app.api.routes import conversations as conversations_routes
 from app.api.routes import orders as orders_routes
 from app.api.routes import tickets as tickets_routes
 from app.core.llm import get_llm
@@ -47,6 +48,7 @@ def create_app(chat_service=None, extraction_service=None) -> FastAPI:
     app.include_router(jobs_routes.router)
     app.include_router(kb_routes.router)
     app.include_router(actions_routes.router)
+    app.include_router(conversations_routes.router)
     app.include_router(orders_routes.router)
     app.include_router(tickets_routes.router)
 
