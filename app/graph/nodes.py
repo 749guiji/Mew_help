@@ -72,15 +72,17 @@ def resolve_coref(llm, query: str, history: list[str]) -> str:
     return _clean_single_line(text) or query
 
 
-def classify_intent(llm, query: str) -> IntentResult:
+def classify_intent(llm, query: str, history: str = "") -> IntentResult:
     """Classify ``query`` into one of seven intents (+「其他」) via JSON prompt.
 
-    强制 JSON + 稳健解析:解析失败或字段缺失 → ``IntentResult("其他", 0.0)``。
+    结合最近几轮历史判当前意图(应对物流→退款→物流的漂移)。强制 JSON + 稳健解析:
+    解析失败或字段缺失 → ``IntentResult("其他", 0.0)``。
     """
+    context = f"最近对话(可空):\n{history or '(无)'}\n\n当前问题:{query}"
     chain = ChatPromptTemplate.from_messages(
         [("system", INTENT_SYSTEM_PROMPT), ("human", "{input}")]
     ) | llm
-    result = chain.invoke({"input": query})
+    result = chain.invoke({"input": context})
     text = getattr(result, "content", str(result)).strip()
     data = parse_json_object(text)
     if not data:
@@ -92,15 +94,6 @@ def classify_intent(llm, query: str) -> IntentResult:
     if intent not in VALID_INTENTS:
         return IntentResult("其他", 0.0)
     return IntentResult(intent, float(confidence))
-
-
-def maybe_escalate(
-    escalate_llm, query: str, result: IntentResult, threshold: float
-) -> IntentResult:
-    """若配了大模型且置信度低于阈值,用大模型重判一次;否则原样返回。"""
-    if escalate_llm is None or result.confidence >= threshold:
-        return result
-    return classify_intent(escalate_llm, query)
 
 
 def expand_queries(llm, query: str) -> list[str]:

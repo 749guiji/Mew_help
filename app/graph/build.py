@@ -51,6 +51,12 @@ def _coref_node(state: GraphState) -> dict:
     return {"resolved_query": resolved, "visited": ["coref"]}
 
 
+def _history_text(state: GraphState) -> str:
+    """把最近几轮消息压成紧凑文本,供意图识别读上下文消歧。"""
+    msgs = [m for m in state.get("messages", []) if getattr(m, "content", None)]
+    return "\n".join(str(m.content) for m in msgs)
+
+
 def _intent_node(state: GraphState) -> dict:
     from langchain_openai import ChatOpenAI
 
@@ -59,26 +65,14 @@ def _intent_node(state: GraphState) -> dict:
     settings = get_settings()
     query = state["resolved_query"]
 
-    big_llm = ChatOpenAI(
-        model=settings.intent_model,
-        base_url=settings.intent_model_base_url,
-        api_key=settings.intent_model_api_key,
+    # 意图识别统一走够格大模型(intent_model,空则回落主模型);降级路不实现运行时。
+    llm = ChatOpenAI(
+        model=settings.intent_model or settings.model,
+        base_url=settings.intent_model_base_url or settings.base_url,
+        api_key=settings.intent_model_api_key or settings.api_key,
         temperature=settings.temperature,
     )
-
-    if settings.intent_small_model and settings.intent_small_model != settings.intent_model:
-        small_llm = ChatOpenAI(
-            model=settings.intent_small_model,
-            base_url=settings.base_url,
-            api_key=settings.api_key,
-            temperature=settings.temperature,
-        )
-        result = nodes.classify_intent(small_llm, query)
-        result = nodes.maybe_escalate(
-            big_llm, query, result, settings.intent_escalate_threshold
-        )
-    else:
-        result = nodes.classify_intent(big_llm, query)
+    result = nodes.classify_intent(llm, query, _history_text(state))
 
     return {
         "intent": result.intent,

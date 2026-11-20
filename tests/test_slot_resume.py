@@ -15,7 +15,7 @@ def _fake_understanding(monkeypatch):
     """避开真模型:coref 透传、意图固定退款退货、扩写固定两条。"""
     monkeypatch.setattr(nodes, "resolve_coref", lambda llm, q, h: q)
     monkeypatch.setattr(
-        nodes, "classify_intent", lambda llm, q: IntentResult("退款退货", 0.9)
+        nodes, "classify_intent", lambda llm, q, h="": IntentResult("退款退货", 0.9)
     )
     monkeypatch.setattr(
         nodes, "expand_queries", lambda llm, q: ["退款政策", "退货条件"]
@@ -83,7 +83,7 @@ def test_refund_abandon_clears_order_id(monkeypatch):
     assert r1["pending_slot"] == "order_id"
 
     monkeypatch.setattr(
-        nodes, "classify_intent", lambda llm, q: IntentResult("物流", 0.9)
+        nodes, "classify_intent", lambda llm, q, h="": IntentResult("物流", 0.9)
     )
     r2 = _run_turns(graph, [("物流到哪了", None)])[0]
 
