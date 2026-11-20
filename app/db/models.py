@@ -74,27 +74,7 @@ class Ticket(Base):
     )
     description = Column(Text, nullable=False)
     ticket_type = Column(
-        Enum("售后", "投诉", "咨询", native_enum=False), nullable=False
-    )
-    status = Column(
-        Enum("待处理", "已处理", native_enum=False),
-        nullable=False,
-        server_default="待处理",
-    )
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
-
-
-class RefundRequest(Base):
-    __tablename__ = "refund_requests"
-
-    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
-    conversation_id = Column(
-        BIGINT_UNSIGNED, ForeignKey("conversations.id"), nullable=False, index=True
-    )
-    order_id = Column(String(64), nullable=False)
-    reason = Column(
-        Enum("7天无理由", "质量问题", "发错货", "少件", "与描述不符", "其他", native_enum=False),
-        nullable=False,
+        Enum("售后", "投诉", "咨询", "退款", native_enum=False), nullable=False
     )
     status = Column(
         Enum("待处理", "已处理", native_enum=False),

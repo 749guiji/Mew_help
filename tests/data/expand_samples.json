@@ -1,7 +1,7 @@
 [
   {"query": "这件商品能退货吗", "must_cover": ["退货"]},
   {"query": "退款多久到账", "must_cover": ["退款"]},
-  {"query": "收到的东西坏了怎么办", "must_cover": ["质量"]},
+  {"query": "收到的东西坏了怎么办", "must_cover": ["损坏"]},
   {"query": "退货流程是什么", "must_cover": ["退货"]},
   {"query": "退货的运费谁承担", "must_cover": ["运费"]},
   {"query": "什么情况不能退货", "must_cover": ["退货"]}
