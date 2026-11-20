@@ -10,6 +10,7 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects import mysql
@@ -35,6 +36,28 @@ class Conversation(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    # ch07 三层上下文:投影摘要 + 两锚点
+    summary = Column(Text, nullable=True)
+    summary_upto_msg_id = Column(BIGINT_UNSIGNED, nullable=True)
+    layer1_from_msg_id = Column(BIGINT_UNSIGNED, nullable=True)
+
+
+class ConversationSummary(Base):
+    __tablename__ = "conversation_summaries"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    conversation_id = Column(
+        BIGINT_UNSIGNED, ForeignKey("conversations.id"), nullable=False, index=True
+    )
+    seq = Column(Integer, nullable=False)
+    from_msg_id = Column(BIGINT_UNSIGNED, nullable=False)
+    upto_msg_id = Column(BIGINT_UNSIGNED, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "seq", name="uk_conv_seq"),
     )
 
 
