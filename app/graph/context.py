@@ -77,14 +77,10 @@ def split_layers(
 
 
 def _render_layer2(msg: BaseMessage) -> BaseMessage:
-    """层2 截短渲染,保留消息类型。"""
+    """层2 截短渲染,保留消息类型。工具结果降级成一行标识(丢 tool_call_id,前面 assistant 的 tool_calls 已截掉,避免悬空 ToolMessage)。"""
     text = _truncate_layer2(msg)
     if isinstance(msg, ToolMessage):
-        return ToolMessage(
-            content=text,
-            tool_call_id=getattr(msg, "tool_call_id", None),
-            name=getattr(msg, "name", None),
-        )
+        return HumanMessage(content=text)
     if isinstance(msg, AIMessage):
         return AIMessage(content=text)
     return HumanMessage(content=text)

@@ -50,11 +50,25 @@ async def react_agent_node(
     if token_budget is None:
         token_budget = get_settings().max_history_tokens
 
-    from app.graph.context import assemble_model_context
+    from app.graph.context import assemble_model_context, split_layers
     from app.graph.context_meta import load_context_meta
 
     summary_text, summary_upto_pos, layer1_from_pos = load_context_meta(
         state.get("conversation_id")
+    )
+
+    # 降级接线:层1超预算上移锚点、层2超预算后台起摘要
+    from app.core.degradation import apply_degradation
+
+    _l2, _l1, _ = split_layers(
+        state.get("messages", []),
+        summary_upto_pos=summary_upto_pos,
+        layer1_from_pos=layer1_from_pos,
+    )
+    apply_degradation(
+        state.get("conversation_id"),
+        sum(len(m.content or "") for m in _l1),
+        sum(len(m.content or "") for m in _l2),
     )
 
     evidence = ""
