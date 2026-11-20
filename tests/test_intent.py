@@ -27,5 +27,13 @@ def test_classify_intent_falls_back_on_no_match():
     assert classify_intent(FakeLLM("我不知道"), "你好") == "闲聊"
 
 
-def test_resolve_coref_passthrough():
-    assert resolve_coref("它到哪了") == "它到哪了"
+def test_resolve_coref_passthrough_when_complete():
+    assert resolve_coref(FakeLLM("物流到哪了"), "物流到哪了", []) == "物流到哪了"
+
+
+def test_resolve_coref_falls_back_on_empty():
+    assert resolve_coref(FakeLLM(""), "它能退吗", ["我买了耳机"]) == "它能退吗"
+
+
+def test_resolve_coref_returns_model_output():
+    assert resolve_coref(FakeLLM("耳机能退货吗"), "它能退吗", ["我买了耳机"]) == "耳机能退货吗"

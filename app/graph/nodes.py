@@ -9,14 +9,49 @@ from __future__ import annotations
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.prompts.system import INTENT_SYSTEM_PROMPT
+from app.prompts.system import COREF_REWRITE_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT
 
 INTENTS = ("物流", "订单", "商品咨询", "退款退货", "售后", "投诉", "闲聊")
 
+_COREF_HISTORY_MAX_CHARS = 2000
 
-def resolve_coref(query: str) -> str:
-    """指代消解:本章原样透传(正式版后续再做)。"""
-    return query
+
+def _build_coref_context(query: str, history: list[str]) -> str:
+    """把历史 + 当前问题拼成给 LLM 的上下文,超出字符预算时丢最旧消息。"""
+    lines: list[str] = []
+    total = 0
+    for msg in reversed(history):
+        total += len(msg)
+        if total > _COREF_HISTORY_MAX_CHARS:
+            break
+        lines.append(msg)
+    lines.reverse()
+    history_text = "\n".join(f"- {m}" for m in lines) if lines else "(无)"
+    return f"对话历史：\n{history_text}\n\n当前问题：{query}"
+
+
+def _clean_single_line(text: str) -> str:
+    """去掉代码围栏、配对引号与首尾空白,只留单句。"""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'“”":
+        text = text[1:-1].strip()
+    return text
+
+
+def resolve_coref(llm, query: str, history: list[str]) -> str:
+    """指代消解 + 改写:结合历史把 query 补全成独立完整问句(单句,非 JSON)。
+
+    ``llm`` 是 Runnable;``history`` 为已提取的最近若干轮用户/助手消息文本
+    (旧→新)。空输出/异常一律回退 ``query``。
+    """
+    chain = ChatPromptTemplate.from_messages(
+        [("system", COREF_REWRITE_SYSTEM_PROMPT), ("human", "{context}")]
+    ) | llm
+    result = chain.invoke({"context": _build_coref_context(query, history)})
+    text = getattr(result, "content", str(result)).strip()
+    return _clean_single_line(text) or query
 
 
 def classify_intent(llm, query: str) -> str:
