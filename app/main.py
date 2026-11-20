@@ -19,7 +19,19 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def create_app(chat_service=None, extraction_service=None) -> FastAPI:
+    import logging
+
+    from app.core.budget import compute_budget
+    from app.core.config import get_settings
+
     app = FastAPI()
+
+    # ch07 启动自检:历史预算连一轮稳态都装不下就报警
+    b = compute_budget(get_settings())
+    if b.history < b.per_round_steady:
+        logging.getLogger("budget").warning(
+            "上下文预算不足:历史预算 %d < 一轮稳态 %d,滑窗将归零", b.history, b.per_round_steady
+        )
 
     if chat_service is None:
         chat_service = ChatService()
