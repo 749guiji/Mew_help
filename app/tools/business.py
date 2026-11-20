@@ -26,3 +26,10 @@ def query_logistics(order_id: str) -> str:
     """根据订单号查询物流/包裹运输状态。当用户询问包裹到哪了、运输或配送进度时使用。"""
     statuses = ["已揽收", "运输中", "已到达派送点", "派送中", "已签收"]
     return f"订单 {order_id} 物流状态:{random.choice(statuses)}。"
+
+
+@tool
+def submit_refund(order_id: str, reason: str | None = None) -> str:
+    """判定这一单可以退款后,调用本工具发起退款申请。实际提交由前端退款表单确认后落库,
+    本工具只表示「这一单可以退,已把提交入口交给用户」。"""
+    return f"退款申请已提交:订单 {order_id}(原因待用户在前端选择)"

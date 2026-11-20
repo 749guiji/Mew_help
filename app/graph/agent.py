@@ -59,6 +59,7 @@ async def react_agent_node(
     if state.get("route") == "refund_flow":
         parts = [
             "请判断这一单能否退款/退货,依据政策条款和订单状态作答,不得承诺退款金额或到账时间。"
+            "若能退,调用 submit_refund 工具(传该订单号);若不能退,不要调用任何工具,说清原因并引导人工客服。"
         ]
         order = state.get("order_data")
         if order:
@@ -75,6 +76,7 @@ async def react_agent_node(
     exec_ = executor if executor is not None else ToolExecutor()
 
     produced: list = []
+    suggested_actions: list = []
     for _ in range(max_steps):
         _trim_history(history, token_budget * 4)
         ai = await bound_llm.ainvoke(history)
@@ -83,9 +85,26 @@ async def react_agent_node(
         if not ai.tool_calls:
             break
         for tc in ai.tool_calls:
-            raw = await exec_.execute(tc["name"], tc["args"])
-            tm = ToolMessage(content=raw, tool_call_id=tc["id"])
+            if tc["name"] == "submit_refund":
+                # 拦截:不执行,合成 ToolMessage 促收敛,记 refund_form 前端动作(仿 create_ticket)
+                suggested_actions.append(
+                    {
+                        "type": "refund_form",
+                        "draft": {
+                            "order_id": tc["args"].get("order_id", ""),
+                            "reason": tc["args"].get("reason"),
+                        },
+                    }
+                )
+                tm = ToolMessage(
+                    content="已把「提交退款工单」选项交给用户确认。请用一句话说明这一单可以退款并停止,不要再调用任何工具。",
+                    tool_call_id=tc["id"],
+                    name="submit_refund",
+                )
+            else:
+                raw = await exec_.execute(tc["name"], tc["args"])
+                tm = ToolMessage(content=raw, tool_call_id=tc["id"])
             produced.append(tm)
             history.append(tm)
 
-    return {"messages": produced, "visited": ["agent"]}
+    return {"messages": produced, "suggested_actions": suggested_actions, "visited": ["agent"]}

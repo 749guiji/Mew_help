@@ -28,15 +28,16 @@ def sqlite_session_local(monkeypatch):
     return SessionLocal
 
 
-def test_registry_has_five_tools():
+def test_registry_has_six_tools():
     assert set(TOOL_REGISTRY) == {
         "query_order",
         "query_product",
         "query_logistics",
         "query_faq",
         "create_ticket",
+        "submit_refund",
     }
-    assert len(ALL_TOOLS) == 5
+    assert len(ALL_TOOLS) == 6
 
 
 def test_query_order_returns_str():

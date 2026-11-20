@@ -25,6 +25,7 @@ class GraphState(TypedDict, total=False):
     retrieval_score: float | None
     confidence_pass: bool | None
     handoff_suggestions: list[str]
+    suggested_actions: list
     visited: Annotated[list[str], operator.add]
     # ch06:退款/售后子流程(interrupt 承载槽位,无需 pending_slot)
     order_id: str | None

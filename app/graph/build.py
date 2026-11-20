@@ -21,6 +21,7 @@ def _reset_node(state: GraphState) -> dict:
         "retrieval_score": None,
         "confidence_pass": None,
         "handoff_suggestions": [],
+        "suggested_actions": [],
         "order_data": None,
         "order_id": None,
         "intent_confidence": None,
