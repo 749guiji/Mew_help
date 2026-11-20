@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from langchain_core.prompts import ChatPromptTemplate
 
 from app.graph.json_utils import parse_json_object
-from app.prompts.system import COREF_REWRITE_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT
+from app.prompts.system import (
+    COREF_REWRITE_SYSTEM_PROMPT,
+    EXPAND_SYSTEM_PROMPT,
+    INTENT_SYSTEM_PROMPT,
+)
 
 INTENTS = ("物流", "订单", "商品咨询", "退款退货", "售后", "投诉", "闲聊")
 
@@ -92,6 +96,24 @@ def maybe_escalate(
     if escalate_llm is None or result.confidence >= threshold:
         return result
     return classify_intent(escalate_llm, query)
+
+
+def expand_queries(llm, query: str) -> list[str]:
+    """把一句完整问法扩成多条侧重点不同的检索查询(强制 JSON ``queries[]``)。
+
+    解析失败/空/queries 非字符串列表 → 回退 ``[query]``。
+    """
+    chain = ChatPromptTemplate.from_messages(
+        [("system", EXPAND_SYSTEM_PROMPT), ("human", "{input}")]
+    ) | llm
+    result = chain.invoke({"input": query})
+    text = getattr(result, "content", str(result)).strip()
+    data = parse_json_object(text)
+    queries = data.get("queries") if data else None
+    if not isinstance(queries, list) or not queries:
+        return [query]
+    cleaned = [q for q in queries if isinstance(q, str) and q.strip()]
+    return cleaned or [query]
 
 
 def gate_pass(score: float | None, threshold: float) -> bool:
