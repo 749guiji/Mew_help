@@ -78,7 +78,7 @@ class ChatService:
             logger.warning("Failed to save message (role=%s): %s", role, e)
 
     async def stream_chat(
-        self, session_id: str | None, message: str
+        self, session_id: str | None, message: str, order_id: str | None = None
     ) -> AsyncIterator[dict[str, str]]:
         try:
             sid = session_id if session_id in self._sessions else uuid4().hex
@@ -93,7 +93,7 @@ class ChatService:
             before = await graph.aget_state(config)
             before_count = len(before.values.get("messages", []))
             result = await graph.ainvoke(
-                {"messages": [("user", message)], "raw_query": message},
+                {"messages": [("user", message)], "raw_query": message, "order_id": order_id},
                 config=config,
             )
 
@@ -126,6 +126,11 @@ class ChatService:
             handoff = result.get("handoff_suggestions") or []
             if handoff:
                 yield {"type": "handoff", "suggestions": handoff}
+
+            # 订单选择器帧(退款子流程缺订单号时下发可点选订单列表)
+            order_list = result.get("order_list") or []
+            if order_list:
+                yield {"type": "order_select", "orders": order_list}
 
             self._save_message(conv_id, role="user", content=message)
             self._save_message(conv_id, role="assistant", content=answer or None)

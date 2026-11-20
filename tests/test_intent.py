@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from app.graph.nodes import classify_intent, resolve_coref
+from app.graph.nodes import IntentResult, classify_intent, maybe_escalate, resolve_coref
 
 
 class FakeLLM:
@@ -15,17 +15,56 @@ class FakeLLM:
         return SimpleNamespace(content=self._content)
 
 
-def test_classify_intent_returns_matched_intent():
-    assert classify_intent(FakeLLM("订单"), "订单 1001 到哪了") == "订单"
+def test_classify_intent_parses_json():
+    r = classify_intent(FakeLLM('{"intent":"退款退货","confidence":0.9}'), "这个能退吗")
+    assert r.intent == "退款退货"
+    assert r.confidence == 0.9
 
 
-def test_classify_intent_handles_parenthetical():
-    assert classify_intent(FakeLLM("订单(订单状态)"), "订单 1001") == "订单"
+def test_classify_intent_falls_back_to_other_on_bad_json():
+    r = classify_intent(FakeLLM("我不知道"), "这个能退吗")
+    assert r.intent == "其他"
+    assert r.confidence == 0.0
 
 
-def test_classify_intent_falls_back_on_no_match():
-    assert classify_intent(FakeLLM("我不知道"), "你好") == "闲聊"
+def test_classify_intent_falls_back_on_missing_field():
+    r = classify_intent(FakeLLM('{"intent":"退款退货"}'), "这个能退吗")
+    assert r.intent == "其他"
+    assert r.confidence == 0.0
 
 
-def test_resolve_coref_passthrough():
-    assert resolve_coref("它到哪了") == "它到哪了"
+def test_classify_intent_unknown_intent_falls_back_to_other():
+    r = classify_intent(FakeLLM('{"intent":"查快递","confidence":0.9}'), "这个能退吗")
+    assert r.intent == "其他"
+    assert r.confidence == 0.0
+
+
+def test_maybe_escalate_noop_without_escalate_llm():
+    r = IntentResult("物流", 0.4)
+    assert maybe_escalate(None, "它到哪了", r, 0.6) is r
+
+
+def test_maybe_escalate_keeps_high_confidence():
+    r = IntentResult("物流", 0.9)
+    out = maybe_escalate(FakeLLM('{"intent":"物流","confidence":0.9}'), "它到哪了", r, 0.6)
+    assert out is r
+
+
+def test_maybe_escalate_escalates_low_confidence():
+    r = IntentResult("物流", 0.4)
+    big = FakeLLM('{"intent":"退款退货","confidence":0.85}')
+    out = maybe_escalate(big, "它能退吗", r, 0.6)
+    assert out.intent == "退款退货"
+    assert out.confidence == 0.85
+
+
+def test_resolve_coref_passthrough_when_complete():
+    assert resolve_coref(FakeLLM("物流到哪了"), "物流到哪了", []) == "物流到哪了"
+
+
+def test_resolve_coref_falls_back_on_empty():
+    assert resolve_coref(FakeLLM(""), "它能退吗", ["我买了耳机"]) == "它能退吗"
+
+
+def test_resolve_coref_returns_model_output():
+    assert resolve_coref(FakeLLM("耳机能退货吗"), "它能退吗", ["我买了耳机"]) == "耳机能退货吗"

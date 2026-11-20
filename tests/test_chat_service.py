@@ -177,3 +177,26 @@ def test_second_turn_has_no_stale_handoff_or_citations(sqlite_session_local):
     assert not [e for e in e2 if e["type"] == "handoff"]
     assert not [e for e in e2 if e["type"] == "citations"]
     assert [e["content"] for e in e2 if e["type"] == "token"] == ["您好呀"]
+
+
+def test_chat_request_accepts_order_id():
+    from app.schemas.chat import ChatRequest
+
+    r = ChatRequest(message="已选择订单", order_id="1001")
+    assert r.order_id == "1001"
+
+
+def test_stream_emits_order_select(sqlite_session_local):
+    orders = [{"order_id": "1001", "product": "耳机", "amount": "199", "status": "已签收"}]
+    graph = FakeGraph({"messages": [AIMessage(content="请选择订单")], "order_list": orders})
+    svc = ChatService(graph=graph)
+    ev = asyncio.run(collect(svc.stream_chat(None, "这个能退吗")))
+    sel = [e for e in ev if e["type"] == "order_select"]
+    assert sel == [{"type": "order_select", "orders": orders}]
+
+
+def test_order_id_passed_into_graph_input(sqlite_session_local):
+    graph = FakeGraph({"messages": [AIMessage(content="收到")]})
+    svc = ChatService(graph=graph)
+    asyncio.run(collect(svc.stream_chat(None, "已选择订单", order_id="1001")))
+    assert graph.inputs[0][0]["order_id"] == "1001"

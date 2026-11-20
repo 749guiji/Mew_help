@@ -17,8 +17,9 @@ from app.core.config import get_settings
 from app.core.llm import get_llm
 from app.db import SessionLocal
 from app.kb.embedding import Embedder
-from app.kb.hybrid import ScoredChunk, retrieve_with_understanding
+from app.kb.hybrid import ScoredChunk, hybrid_rerank_retrieve, retrieve_with_understanding
 from app.kb.milvus_store import MilvusStore
+from app.kb.query_understanding import expand_synonyms
 from app.kb.reranker import Reranker
 
 
@@ -85,3 +86,34 @@ def default_retrieve(query: str) -> list[ScoredChunk]:
             reranker=reranker,
             rewrite_llm=rewrite_llm,
         )
+
+
+def retrieve_multi(
+    queries: list[str], *, content_type: str = "policy"
+) -> list[ScoredChunk]:
+    """对多条(已扩写的)查询并行检索、按 ``chunk_id`` 去重合并。
+
+    用于退款/售后子流程:扩写产出的查询已是标准问法,直接走 ``hybrid_rerank_retrieve``
+    (跳过逐条 ``rewrite_query``,省 LLM 调用),强制 ``content_type`` 过滤政策条款。
+    ``score`` 取同一 chunk 在各查询里的最高分,返回按 score 降序。
+    """
+    store = _get_store()
+    embedder = _get_embedder()
+    reranker = _get_reranker()
+
+    with SessionLocal() as session:
+        merged: dict[int, ScoredChunk] = {}
+        for q in queries:
+            chunks = hybrid_rerank_retrieve(
+                q,
+                session=session,
+                store=store,
+                embedder=embedder,
+                reranker=reranker,
+                filter=f'content_type == "{content_type}"',
+                sparse_text=expand_synonyms(q),
+            )
+            for c in chunks:
+                if c.chunk_id not in merged or c.score > merged[c.chunk_id].score:
+                    merged[c.chunk_id] = c
+        return sorted(merged.values(), key=lambda c: c.score, reverse=True)

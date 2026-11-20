@@ -56,6 +56,16 @@ async def react_agent_node(
         history.append(
             HumanMessage(content=f"请仅依据以下知识片段回答用户问题:\n{evidence}")
         )
+    if state.get("route") == "refund":
+        parts = [
+            "请判断这一单能否退款/退货,依据政策条款和订单状态作答,不得承诺退款金额或到账时间。"
+        ]
+        order = state.get("order_data")
+        if order:
+            parts.append(f"订单信息:{order}")
+        if state.get("retrieval_chunks"):
+            parts.append(f"政策条款:\n{_format_evidence(state['retrieval_chunks'])}")
+        history.append(HumanMessage(content="\n\n".join(parts)))
     if len(history) == 1:  # 只有 system message,没有用户消息
         history.append(HumanMessage(content=state.get("resolved_query", "")))
 

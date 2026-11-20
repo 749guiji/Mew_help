@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,22 @@ class Settings(BaseSettings):
     hybrid_dense_top_k: int = 50
     hybrid_sparse_top_k: int = 50
     rerank_use_fp16: bool = True
+    # 意图识别专用模型(默认跟随主模型;配了更小/更强的模型才触发升级路)
+    intent_model: str | None = None
+    intent_model_base_url: str | None = None
+    intent_model_api_key: str | None = None
+    intent_small_model: str | None = None
+    intent_escalate_threshold: float = 0.6
+
+    @model_validator(mode="after")
+    def _fill_intent_model_defaults(self) -> "Settings":
+        if not self.intent_model:
+            self.intent_model = self.model
+        if not self.intent_model_base_url:
+            self.intent_model_base_url = self.base_url
+        if not self.intent_model_api_key:
+            self.intent_model_api_key = self.api_key
+        return self
 
 
 @lru_cache

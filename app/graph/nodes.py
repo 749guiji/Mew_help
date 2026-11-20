@@ -7,33 +7,118 @@ Agent node lives in :mod:`app.graph.agent`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.prompts.system import INTENT_SYSTEM_PROMPT
+from app.graph.json_utils import parse_json_object
+from app.prompts.system import (
+    COREF_REWRITE_SYSTEM_PROMPT,
+    EXPAND_SYSTEM_PROMPT,
+    INTENT_SYSTEM_PROMPT,
+)
 
 INTENTS = ("物流", "订单", "商品咨询", "退款退货", "售后", "投诉", "闲聊")
 
-
-def resolve_coref(query: str) -> str:
-    """指代消解:本章原样透传(正式版后续再做)。"""
-    return query
+# 合法意图 = 七类 + 「其他」兜底;越界的类别名一律归「其他」,防止 route 崩溃。
+VALID_INTENTS = INTENTS + ("其他",)
 
 
-def classify_intent(llm, query: str) -> str:
-    """Classify ``query`` into one of seven intents via plain text + match.
+@dataclass
+class IntentResult:
+    """意图识别结果:intent 为七类之一或「其他」,confidence ∈ [0, 1]."""
 
-    qwen3:8b 的 function-calling 结构化输出对这类单字段 schema 偶发返回 None
-    (known issue),故改走纯文本:让模型只输出类别名,再用子串匹配兜底「闲聊」。
+    intent: str
+    confidence: float
+
+_COREF_HISTORY_MAX_CHARS = 2000
+
+
+def _build_coref_context(query: str, history: list[str]) -> str:
+    """把历史 + 当前问题拼成给 LLM 的上下文,超出字符预算时丢最旧消息。"""
+    lines: list[str] = []
+    total = 0
+    for msg in reversed(history):
+        total += len(msg)
+        if total > _COREF_HISTORY_MAX_CHARS:
+            break
+        lines.append(msg)
+    lines.reverse()
+    history_text = "\n".join(f"- {m}" for m in lines) if lines else "(无)"
+    return f"对话历史：\n{history_text}\n\n当前问题：{query}"
+
+
+def _clean_single_line(text: str) -> str:
+    """去掉代码围栏、配对引号与首尾空白,只留单句。"""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'“”":
+        text = text[1:-1].strip()
+    return text
+
+
+def resolve_coref(llm, query: str, history: list[str]) -> str:
+    """指代消解 + 改写:结合历史把 query 补全成独立完整问句(单句,非 JSON)。
+
+    ``llm`` 是 Runnable;``history`` 为已提取的最近若干轮用户/助手消息文本
+    (旧→新)。空输出/异常一律回退 ``query``。
+    """
+    chain = ChatPromptTemplate.from_messages(
+        [("system", COREF_REWRITE_SYSTEM_PROMPT), ("human", "{context}")]
+    ) | llm
+    result = chain.invoke({"context": _build_coref_context(query, history)})
+    text = getattr(result, "content", str(result)).strip()
+    return _clean_single_line(text) or query
+
+
+def classify_intent(llm, query: str) -> IntentResult:
+    """Classify ``query`` into one of seven intents (+「其他」) via JSON prompt.
+
+    强制 JSON + 稳健解析:解析失败或字段缺失 → ``IntentResult("其他", 0.0)``。
     """
     chain = ChatPromptTemplate.from_messages(
         [("system", INTENT_SYSTEM_PROMPT), ("human", "{input}")]
     ) | llm
     result = chain.invoke({"input": query})
     text = getattr(result, "content", str(result)).strip()
-    for intent in INTENTS:
-        if intent in text:
-            return intent
-    return "闲聊"
+    data = parse_json_object(text)
+    if not data:
+        return IntentResult("其他", 0.0)
+    intent = data.get("intent")
+    confidence = data.get("confidence")
+    if not isinstance(intent, str) or not isinstance(confidence, (int, float)):
+        return IntentResult("其他", 0.0)
+    if intent not in VALID_INTENTS:
+        return IntentResult("其他", 0.0)
+    return IntentResult(intent, float(confidence))
+
+
+def maybe_escalate(
+    escalate_llm, query: str, result: IntentResult, threshold: float
+) -> IntentResult:
+    """若配了大模型且置信度低于阈值,用大模型重判一次;否则原样返回。"""
+    if escalate_llm is None or result.confidence >= threshold:
+        return result
+    return classify_intent(escalate_llm, query)
+
+
+def expand_queries(llm, query: str) -> list[str]:
+    """把一句完整问法扩成多条侧重点不同的检索查询(强制 JSON ``queries[]``)。
+
+    解析失败/空/queries 非字符串列表 → 回退 ``[query]``。
+    """
+    chain = ChatPromptTemplate.from_messages(
+        [("system", EXPAND_SYSTEM_PROMPT), ("human", "{input}")]
+    ) | llm
+    result = chain.invoke({"input": query})
+    text = getattr(result, "content", str(result)).strip()
+    data = parse_json_object(text)
+    queries = data.get("queries") if data else None
+    if not isinstance(queries, list) or not queries:
+        return [query]
+    cleaned = [q for q in queries if isinstance(q, str) and q.strip()]
+    return cleaned or [query]
 
 
 def gate_pass(score: float | None, threshold: float) -> bool:
