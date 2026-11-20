@@ -6,7 +6,7 @@ from app.schemas.extraction import AfterSalesExtraction
 
 class FakeChatService:
     def __init__(self): self.last = None
-    async def stream_chat(self, session_id, message):
+    async def stream_chat(self, session_id, message, order_id=None):
         self.last = (session_id, message)
         yield {"type": "meta", "session_id": session_id or "s1"}
         yield {"type": "token", "content": "你好"}
@@ -14,7 +14,7 @@ class FakeChatService:
 
 class FakeToolChatService:
     def __init__(self): self.last = None
-    async def stream_chat(self, session_id, message):
+    async def stream_chat(self, session_id, message, order_id=None):
         self.last = (session_id, message)
         yield {"type": "tool", "name": "query_faq", "status": "running"}
         yield {"type": "done"}
