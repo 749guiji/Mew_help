@@ -7,13 +7,17 @@ from app.graph.router import route_from_intent
 
 def test_knowledge_intents():
     assert route_from_intent("商品咨询") == "knowledge"
-    assert route_from_intent("退款退货") == "knowledge"
+
+
+def test_refund_intents():
+    assert route_from_intent("退款退货") == "refund"
+    assert route_from_intent("售后") == "refund"
 
 
 def test_business_intents():
     assert route_from_intent("物流") == "business"
     assert route_from_intent("订单") == "business"
-    assert route_from_intent("售后") == "business"
+    assert route_from_intent("其他") == "business"
 
 
 def test_complaint_chitchat():

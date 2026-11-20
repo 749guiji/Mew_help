@@ -33,6 +33,12 @@ def test_classify_intent_falls_back_on_missing_field():
     assert r.confidence == 0.0
 
 
+def test_classify_intent_unknown_intent_falls_back_to_other():
+    r = classify_intent(FakeLLM('{"intent":"查快递","confidence":0.9}'), "这个能退吗")
+    assert r.intent == "其他"
+    assert r.confidence == 0.0
+
+
 def test_maybe_escalate_noop_without_escalate_llm():
     r = IntentResult("物流", 0.4)
     assert maybe_escalate(None, "它到哪了", r, 0.6) is r

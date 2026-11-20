@@ -20,6 +20,9 @@ from app.prompts.system import (
 
 INTENTS = ("物流", "订单", "商品咨询", "退款退货", "售后", "投诉", "闲聊")
 
+# 合法意图 = 七类 + 「其他」兜底;越界的类别名一律归「其他」,防止 route 崩溃。
+VALID_INTENTS = INTENTS + ("其他",)
+
 
 @dataclass
 class IntentResult:
@@ -85,6 +88,8 @@ def classify_intent(llm, query: str) -> IntentResult:
     intent = data.get("intent")
     confidence = data.get("confidence")
     if not isinstance(intent, str) or not isinstance(confidence, (int, float)):
+        return IntentResult("其他", 0.0)
+    if intent not in VALID_INTENTS:
         return IntentResult("其他", 0.0)
     return IntentResult(intent, float(confidence))
 

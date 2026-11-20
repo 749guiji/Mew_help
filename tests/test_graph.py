@@ -6,6 +6,7 @@ import pytest
 
 from app.graph import agent, nodes
 from app.graph.build import build_graph
+from app.graph.nodes import IntentResult
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +25,7 @@ def _invoke(graph, query):
 
 
 def test_knowledge_route_forces_retrieval(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "商品咨询")
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("商品咨询", 0.9))
     monkeypatch.setattr(
         nodes,
         "retrieve_node",
@@ -43,7 +44,7 @@ def test_knowledge_route_forces_retrieval(monkeypatch):
 
 
 def test_business_route_skips_retrieval(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "物流")
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("物流", 0.9))
 
     async def fake_agent(state):
         return {"messages": [("assistant", "已查")], "visited": ["agent"]}
@@ -56,7 +57,7 @@ def test_business_route_skips_retrieval(monkeypatch):
 
 
 def test_complaint_returns_handoff_suggestions(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "投诉")
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("投诉", 0.9))
 
     result = _invoke(build_graph(), "我要投诉")
 
@@ -65,7 +66,7 @@ def test_complaint_returns_handoff_suggestions(monkeypatch):
 
 
 def test_chitchat_fixed_reply(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "闲聊")
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("闲聊", 0.9))
 
     result = _invoke(build_graph(), "你好")
 
@@ -74,7 +75,7 @@ def test_chitchat_fixed_reply(monkeypatch):
 
 
 def test_knowledge_fallback_on_low_score(monkeypatch):
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "商品咨询")
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("商品咨询", 0.9))
     monkeypatch.setattr(
         nodes,
         "retrieve_node",
@@ -91,7 +92,7 @@ def test_two_turns_reset_per_turn_fields(monkeypatch):
     graph = build_graph()
     config = {"configurable": {"thread_id": "two-turn"}}
 
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "投诉")
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("投诉", 0.9))
     r1 = asyncio.run(
         graph.ainvoke(
             {"messages": [("user", "我要投诉")], "raw_query": "我要投诉"},
@@ -100,7 +101,7 @@ def test_two_turns_reset_per_turn_fields(monkeypatch):
     )
     assert r1["handoff_suggestions"] == ["转人工", "建工单"]
 
-    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: "闲聊")
+    monkeypatch.setattr(nodes, "classify_intent", lambda llm, q: IntentResult("闲聊", 0.9))
     r2 = asyncio.run(
         graph.ainvoke(
             {"messages": [("user", "你好")], "raw_query": "你好"},
