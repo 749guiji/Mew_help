@@ -8,8 +8,12 @@ from langchain_core.tools import tool
 @tool
 def query_order(order_id: str) -> str:
     """根据订单号查询订单状态(支付/发货/退款等)。当用户询问某个订单的当前状态时使用。"""
-    statuses = ["已支付，待发货", "已发货，运输中", "已签收", "已完成", "退款中"]
-    return f"订单 {order_id} 当前状态:{random.choice(statuses)}。"
+    from app.orders import get_order
+
+    o = get_order(order_id)
+    if o is None:
+        return f"未查到订单 {order_id}。"
+    return f"订单 {order_id}:{o['product']} 金额{o['amount']} 状态:{o['status']}。"
 
 
 @tool
