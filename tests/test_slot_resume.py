@@ -102,6 +102,34 @@ def test_refund_zero_chunks_falls_back(monkeypatch):
     assert "agent" not in result["visited"]
 
 
+def test_extract_order_id_requires_order_context():
+    from app.graph.nodes import _extract_order_id
+
+    assert _extract_order_id("订单1001能退吗") == "1001"
+    assert _extract_order_id("尾号 20260701 那单") == "20260701"
+    assert _extract_order_id("我1200买的能退吗") is None  # 金额不当订单号
+    assert _extract_order_id("我要退款") is None
+
+
+def test_fetch_order_uses_state_user_id(monkeypatch):
+    import app.kb.retrieval as retrieval_mod
+    from app.orders import list_user_orders
+
+    monkeypatch.setattr(retrieval_mod, "retrieve_multi", lambda queries, **kw: _chunks())
+    monkeypatch.setattr(agent, "react_agent_node", _fake_agent)
+
+    graph = build_graph()
+    config = {"configurable": {"thread_id": "t-uid"}}
+    result = asyncio.run(
+        graph.ainvoke(
+            {"messages": [("user", "我要退款")], "raw_query": "我要退款", "user_id": "u42"},
+            config,
+        )
+    )
+    orders = result["__interrupt__"][0].value["orders"]
+    assert orders == list_user_orders("u42")
+
+
 def test_refund_second_time_reinterrupts(monkeypatch):
     import app.kb.retrieval as retrieval_mod
 

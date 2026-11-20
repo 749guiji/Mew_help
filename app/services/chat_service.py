@@ -87,6 +87,9 @@ class ChatService:
         config = {"configurable": {"thread_id": sid}}
         before = await graph.aget_state(config)
         before_count = len(before.values.get("messages", []))
+        if isinstance(invoke_input, dict):
+            # 把会话身份穿进图,订单选择器按会话稳定出单(Command(resume) 时已在 checkpoint)
+            invoke_input = {**invoke_input, "user_id": sid}
         result = await graph.ainvoke(invoke_input, config=config)
 
         # 中断帧:退款子流程缺订单号,图暂停在 fetch_order

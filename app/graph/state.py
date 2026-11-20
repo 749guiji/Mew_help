@@ -19,6 +19,7 @@ class GraphState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     raw_query: str
     resolved_query: str
+    user_id: str
     intent: str
     route: str
     retrieval_chunks: list

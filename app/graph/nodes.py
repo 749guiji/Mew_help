@@ -177,16 +177,6 @@ def complaint_node(state) -> dict:
     }
 
 
-def chitchat_node(state) -> dict:
-    """闲聊:固定话术,不花模型调用。"""
-    from langchain_core.messages import AIMessage
-
-    return {
-        "messages": [AIMessage(content="您好呀，我是客服助手，请问有什么可以帮您的？")],
-        "visited": ["chitchat"],
-    }
-
-
 def log_node(state) -> dict:
     """日志记录:把本次路径 + 意图 + 分流写进日志(供验收#1)。"""
     import logging
@@ -200,17 +190,17 @@ def log_node(state) -> dict:
     return {"visited": ["log"]}
 
 
-_ORDER_RE = re.compile(r"(?<!\d)\d{4,}(?!\d)")
+_ORDER_RE = re.compile(r"(?:订单|单号|尾号)\s*(\d{4,})")
 
 
 def _extract_order_id(text: str) -> str | None:
-    """从文本抽 4+ 位连续数字视作订单号;抽不到返回 None。
+    """从文本抽订单号;抽不到返回 None。
 
-    用 ``(?<!\\d)...(?!\\d)`` 而非 ``\\b``:Python 里中文也是 ``\\w``,
-    ``\\b1001\\b`` 对「订单1001」这类中文紧邻数字的文本匹配不到。
+    要求「订单/单号/尾号」上下文前缀,避免把「我1200买的」这种金额当成订单号
+    (缺单不猜不编——抽不到就走 interrupt 让用户点选,不 fabricate 订单)。
     """
     m = _ORDER_RE.search(text or "")
-    return m.group(0) if m else None
+    return m.group(1) if m else None
 
 
 def fetch_order(state) -> dict:
