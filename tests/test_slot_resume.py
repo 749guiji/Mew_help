@@ -50,7 +50,7 @@ def test_refund_without_order_id_pauses(monkeypatch):
     result = _run_turns(build_graph(), [("这个能退吗", None)])[0]
 
     assert result["pending_slot"] == "order_id"
-    assert len(result["order_list"]) >= 5
+    assert len(result["order_list"]) >= 2
     assert "请选择" in result["messages"][-1].content
     assert "agent" not in result["visited"]
 
@@ -108,7 +108,7 @@ def test_refund_second_time_reprompts(monkeypatch):
     assert r2["order_id"] is None
     assert r3["pending_slot"] == "order_id"
     assert r3["order_id"] is None
-    assert len(r3["order_list"]) >= 5
+    assert len(r3["order_list"]) >= 2
 
 
 def test_refund_zero_chunks_falls_back(monkeypatch):

@@ -83,11 +83,11 @@ def _intent_node(state: GraphState) -> dict:
 
 
 def _get_order_node(state: GraphState) -> dict:
-    from app.orders import get_order, list_orders
+    from app.orders import get_order, list_user_orders
 
     if not state.get("order_id"):
         return {
-            "order_list": list_orders(),
+            "order_list": list_user_orders(state.get("user_id") or "guest"),
             "pending_slot": "order_id",
             "messages": [AIMessage(content="请选择要咨询的订单：")],
             "visited": ["get_order"],
