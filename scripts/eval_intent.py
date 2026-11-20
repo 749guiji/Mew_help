@@ -16,10 +16,13 @@ def main() -> int:
     llm = get_llm(get_settings())
     correct = 0
     for s in samples:
-        got = classify_intent(llm, s["query"])
-        ok = got == s["intent"]
+        r = classify_intent(llm, s["query"])
+        ok = r.intent == s["intent"]
         correct += int(ok)
-        print(f"{'OK  ' if ok else 'MISS'} {s['query']} -> {got} (expect {s['intent']})")
+        print(
+            f"{'OK  ' if ok else 'MISS'} {s['query']} -> {r.intent} "
+            f"(conf={r.confidence}, expect {s['intent']})"
+        )
     print(f"accuracy: {correct}/{len(samples)}")
     return 0 if correct == len(samples) else 1
 

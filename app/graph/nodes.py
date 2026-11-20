@@ -7,11 +7,22 @@ Agent node lives in :mod:`app.graph.agent`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from langchain_core.prompts import ChatPromptTemplate
 
+from app.graph.json_utils import parse_json_object
 from app.prompts.system import COREF_REWRITE_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT
 
 INTENTS = ("物流", "订单", "商品咨询", "退款退货", "售后", "投诉", "闲聊")
+
+
+@dataclass
+class IntentResult:
+    """意图识别结果:intent 为七类之一或「其他」,confidence ∈ [0, 1]."""
+
+    intent: str
+    confidence: float
 
 _COREF_HISTORY_MAX_CHARS = 2000
 
@@ -54,21 +65,33 @@ def resolve_coref(llm, query: str, history: list[str]) -> str:
     return _clean_single_line(text) or query
 
 
-def classify_intent(llm, query: str) -> str:
-    """Classify ``query`` into one of seven intents via plain text + match.
+def classify_intent(llm, query: str) -> IntentResult:
+    """Classify ``query`` into one of seven intents (+「其他」) via JSON prompt.
 
-    qwen3:8b 的 function-calling 结构化输出对这类单字段 schema 偶发返回 None
-    (known issue),故改走纯文本:让模型只输出类别名,再用子串匹配兜底「闲聊」。
+    强制 JSON + 稳健解析:解析失败或字段缺失 → ``IntentResult("其他", 0.0)``。
     """
     chain = ChatPromptTemplate.from_messages(
         [("system", INTENT_SYSTEM_PROMPT), ("human", "{input}")]
     ) | llm
     result = chain.invoke({"input": query})
     text = getattr(result, "content", str(result)).strip()
-    for intent in INTENTS:
-        if intent in text:
-            return intent
-    return "闲聊"
+    data = parse_json_object(text)
+    if not data:
+        return IntentResult("其他", 0.0)
+    intent = data.get("intent")
+    confidence = data.get("confidence")
+    if not isinstance(intent, str) or not isinstance(confidence, (int, float)):
+        return IntentResult("其他", 0.0)
+    return IntentResult(intent, float(confidence))
+
+
+def maybe_escalate(
+    escalate_llm, query: str, result: IntentResult, threshold: float
+) -> IntentResult:
+    """若配了大模型且置信度低于阈值,用大模型重判一次;否则原样返回。"""
+    if escalate_llm is None or result.confidence >= threshold:
+        return result
+    return classify_intent(escalate_llm, query)
 
 
 def gate_pass(score: float | None, threshold: float) -> bool:

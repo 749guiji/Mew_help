@@ -47,3 +47,22 @@ def test_database_url_default():
     from app.core.config import Settings
     s = Settings(_env_file=None)
     assert s.database_url.startswith("mysql+pymysql://")
+
+
+def test_intent_model_defaults_follow_main(monkeypatch):
+    from app.core.config import Settings
+
+    for key in (
+        "intent_model",
+        "intent_model_base_url",
+        "intent_model_api_key",
+        "intent_small_model",
+        "intent_escalate_threshold",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    s = Settings(_env_file=None)
+    assert s.intent_model == s.model
+    assert s.intent_model_base_url == s.base_url
+    assert s.intent_model_api_key == s.api_key
+    assert s.intent_small_model is None
+    assert s.intent_escalate_threshold == 0.6
