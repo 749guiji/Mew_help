@@ -275,3 +275,16 @@ class EvalRun(Base):
     dataset_size = Column(Integer, nullable=False)
     metrics = Column(JSON, nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+
+
+class TopicClassification(Base):
+    """主题归类结果(ch10):旁路批量归类,关联 low_confidence_questions,多标签。"""
+
+    __tablename__ = "topic_classifications"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    low_conf_id = Column(
+        BIGINT_UNSIGNED, ForeignKey("low_confidence_questions.id"), nullable=False, index=True
+    )
+    labels = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())

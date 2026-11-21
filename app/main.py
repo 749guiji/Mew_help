@@ -15,6 +15,8 @@ from app.api.routes import conversations as conversations_routes
 from app.api.routes import feedback as feedback_routes
 from app.api.routes import orders as orders_routes
 from app.api.routes import review as review_routes
+from app.api.routes import topics as topics_routes
+from app.api.routes import acceptance as acceptance_routes
 from app.api.routes import tickets as tickets_routes
 from app.core.llm import get_llm
 from app.services.chat_service import ChatService
@@ -63,6 +65,8 @@ def create_app(chat_service=None, extraction_service=None) -> FastAPI:
     app.include_router(feedback_routes.router)
     app.include_router(orders_routes.router)
     app.include_router(review_routes.router)
+    app.include_router(topics_routes.router)
+    app.include_router(acceptance_routes.router)
     app.include_router(tickets_routes.router)
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

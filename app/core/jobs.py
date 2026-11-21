@@ -247,6 +247,15 @@ def _run_eval() -> dict:
     return metrics
 
 
+def _run_classify_topics() -> dict:
+    """主题批量归类:调独立推理服务写 topic_classifications。"""
+    from app.jobs.classify_topics import classify_topics
+
+    result = classify_topics()
+    print(f"classify-topics: {result}")
+    return result
+
+
 JOB_REGISTRY: dict[str, Job] = {
     "kb-preview": Job("kb-preview", _run_kb_preview, is_heavy=False),
     "kb-build": Job("kb-build", _run_kb_build, is_heavy=False),
@@ -255,4 +264,5 @@ JOB_REGISTRY: dict[str, Job] = {
     "kb-reset": Job("kb-reset", _run_kb_reset, is_heavy=True),
     "flywheel": Job("flywheel", _run_flywheel, is_heavy=True),
     "eval-run": Job("eval-run", _run_eval, is_heavy=True),
+    "classify-topics": Job("classify-topics", _run_classify_topics, is_heavy=False),
 }

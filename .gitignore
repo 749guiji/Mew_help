@@ -36,3 +36,9 @@ Thumbs.db
 
 # Job runner logs
 log/
+ml/artifacts/
+# ch10 生成的数据集(手写样例 hand_written.jsonl 保留在库)
+ml/data/raw_synthetic.jsonl
+ml/data/train.jsonl
+ml/data/val.jsonl
+ml/data/test.jsonl
