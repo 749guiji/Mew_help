@@ -238,6 +238,15 @@ def _run_flywheel() -> dict:
     return result
 
 
+def _run_eval() -> dict:
+    """评估流水线:跑检索段指标并落 eval_runs。"""
+    from app.jobs.eval_run import run_eval_and_record
+
+    metrics = run_eval_and_record(triggered_by="手动")
+    print(f"eval-run: {metrics}")
+    return metrics
+
+
 JOB_REGISTRY: dict[str, Job] = {
     "kb-preview": Job("kb-preview", _run_kb_preview, is_heavy=False),
     "kb-build": Job("kb-build", _run_kb_build, is_heavy=False),
@@ -245,4 +254,5 @@ JOB_REGISTRY: dict[str, Job] = {
     "kb-vectorize": Job("kb-vectorize", _run_kb_vectorize, is_heavy=False),
     "kb-reset": Job("kb-reset", _run_kb_reset, is_heavy=True),
     "flywheel": Job("flywheel", _run_flywheel, is_heavy=True),
+    "eval-run": Job("eval-run", _run_eval, is_heavy=True),
 }
