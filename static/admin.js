@@ -44,5 +44,8 @@ document.getElementById("run-flywheel").addEventListener("click", function () {
 document.getElementById("run-eval").addEventListener("click", function () {
   runJob("eval-run", this, "📊 跑评估");
 });
+document.getElementById("run-classify").addEventListener("click", function () {
+  runJob("classify-topics", this, "🏷 跑主题归类");
+});
 
 loadCards();

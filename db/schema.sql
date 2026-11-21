@@ -266,3 +266,19 @@ ALTER TABLE low_confidence_questions
   ADD COLUMN matched_review_id BIGINT UNSIGNED NULL COMMENT '查重后归并到的缺口,指向 review_queue.id' AFTER retrieved_chunks,
   ADD KEY idx_matched_review_id (matched_review_id),
   ADD CONSTRAINT fk_lcq_review FOREIGN KEY (matched_review_id) REFERENCES review_queue (id) ON DELETE SET NULL;
+
+-- =============================================================
+-- ch10 · 多标签主题分类器 · 建表 DDL
+-- topic_classifications:旁路批量归类结果,关联问题 + 多标签 + 归类时间
+-- =============================================================
+SET NAMES utf8mb4;
+
+CREATE TABLE topic_classifications (
+  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '归类主键',
+  low_conf_id  BIGINT UNSIGNED NOT NULL                COMMENT '关联的 low_confidence_questions.id',
+  labels       JSON            NOT NULL                COMMENT '多标签,如 ["退换货","尺码"]',
+  created_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '归类时间',
+  PRIMARY KEY (id),
+  KEY idx_low_conf_id (low_conf_id),
+  CONSTRAINT fk_tc_low_conf FOREIGN KEY (low_conf_id) REFERENCES low_confidence_questions (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='主题归类结果';
