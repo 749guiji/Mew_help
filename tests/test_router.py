@@ -17,6 +17,7 @@ def test_refund_flow_intents():
 def test_business_intents():
     assert route_from_intent("物流") == "business"
     assert route_from_intent("订单") == "business"
+    assert route_from_intent("建工单") == "business"
 
 
 def test_escalate_intent():

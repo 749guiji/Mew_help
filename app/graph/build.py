@@ -25,6 +25,7 @@ def _reset_node(state: GraphState) -> dict:
         "order_data": None,
         "order_id": None,
         "intent_confidence": None,
+        "pending_ticket": None,
     }
 
 
@@ -89,6 +90,7 @@ def build_graph(checkpointer=None):
     g.add_node("script_reply", nodes.script_reply)
     g.add_node("fetch_order", nodes.fetch_order)
     g.add_node("retrieve_policy", nodes.retrieve_policy)
+    g.add_node("confirm_ticket", nodes.confirm_ticket)
     g.add_node("log", nodes.log_node)
 
     g.add_edge(START, "reset")
@@ -114,7 +116,13 @@ def build_graph(checkpointer=None):
         lambda s: s.get("confidence_pass"),
         {True: "agent", False: "fallback"},
     )
-    g.add_edge("agent", "log")
+    # agent 产出 pending_ticket 时先进 confirm_ticket 走 interrupt 确认,否则直接落 log
+    g.add_conditional_edges(
+        "agent",
+        lambda s: "confirm_ticket" if s.get("pending_ticket") else "log",
+        {"confirm_ticket": "confirm_ticket", "log": "log"},
+    )
+    g.add_edge("confirm_ticket", "log")
     g.add_edge("fallback", "log")
     g.add_edge("complaint", "log")
     g.add_edge("script_reply", "log")

@@ -127,12 +127,12 @@ def test_query_faq_degrades_to_refused(monkeypatch):  # Review Focus #5
     import json
 
     import app.tools.db_tools as db_tools
-    from app.tools import TOOL_REGISTRY
+    from app.tools import registry
 
     monkeypatch.setattr(
         db_tools,
         "default_retrieve",
         lambda q: (_ for _ in ()).throw(RuntimeError("milvus down")),
     )
-    out = json.loads(TOOL_REGISTRY["query_faq"].invoke({"keyword": "邮费是多少"}))
+    out = json.loads(registry.get("query_faq").impl.invoke({"keyword": "邮费是多少"}))
     assert out == {"refused": True, "evidence": "", "citations": []}

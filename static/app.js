@@ -211,7 +211,11 @@ function dispatch(evt, ctx) {
   } else if (evt.type === "handoff") {
     renderHandoff(evt.suggestions || [], ctx.contentEl);
   } else if (evt.type === "interrupt") {
-    renderOrderCards(evt.orders || [], ctx.contentEl);
+    if (evt.kind === "ticket_preview") {
+      renderTicketPreview(evt.draft || {}, ctx.contentEl);
+    } else {
+      renderOrderCards(evt.orders || [], ctx.contentEl);
+    }
   } else if (evt.type === "actions") {
     renderActions(evt.items || [], ctx.contentEl);
   } else if (evt.type === "error") {
@@ -350,6 +354,75 @@ async function selectOrder(order) {
   await streamTo(
     "/api/actions/resume",
     { conversation_id: state.conversationId, order_id: order.order_id },
+    contentEl
+  );
+}
+
+// 工单预览卡片:interrupt 事件(kind=ticket_preview)渲染,确认/取消走 resume。
+function renderTicketPreview(draft, contentEl) {
+  const wrap = document.createElement("div");
+  wrap.className = "ticket-preview";
+
+  const title = document.createElement("div");
+  title.className = "ticket-preview-title";
+  title.textContent = "工单确认";
+  wrap.appendChild(title);
+
+  const typeRow = document.createElement("div");
+  typeRow.className = "ticket-preview-row";
+  const typeLabel = document.createElement("span");
+  typeLabel.className = "ticket-label";
+  typeLabel.textContent = "工单类型";
+  const typeVal = document.createElement("span");
+  typeVal.className = "ticket-value";
+  typeVal.textContent = draft.ticket_type || "售后";
+  typeRow.appendChild(typeLabel);
+  typeRow.appendChild(typeVal);
+  wrap.appendChild(typeRow);
+
+  const descRow = document.createElement("div");
+  descRow.className = "ticket-preview-row";
+  const descLabel = document.createElement("span");
+  descLabel.className = "ticket-label";
+  descLabel.textContent = "问题描述";
+  const descVal = document.createElement("span");
+  descVal.className = "ticket-desc";
+  descVal.textContent = draft.description || "";
+  descRow.appendChild(descLabel);
+  descRow.appendChild(descVal);
+  wrap.appendChild(descRow);
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "ticket-preview-actions";
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "ticket-confirm";
+  confirmBtn.textContent = "确认提交";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "ticket-cancel";
+  cancelBtn.textContent = "取消";
+  confirmBtn.addEventListener("click", () => confirmTicket(true));
+  cancelBtn.addEventListener("click", () => confirmTicket(false));
+  btnRow.appendChild(confirmBtn);
+  btnRow.appendChild(cancelBtn);
+  wrap.appendChild(btnRow);
+
+  contentEl.appendChild(wrap);
+  scrollToBottom();
+}
+
+function removeTicketPreview() {
+  document.querySelectorAll(".ticket-preview").forEach((el) => el.remove());
+}
+
+async function confirmTicket(confirm) {
+  if (state.streaming) return;
+  removeTicketPreview();
+  const contentEl = appendBubble("assistant", "");
+  await streamTo(
+    "/api/actions/resume",
+    { conversation_id: state.conversationId, confirm: confirm },
     contentEl
   );
 }

@@ -45,6 +45,16 @@ def test_resume_endpoint_streams():
     assert fake.last == (3, "1001")
 
 
+def test_resume_endpoint_confirm():
+    fake = FakeChatService()
+    app = create_app(chat_service=fake, extraction_service=_FakeExtraction())
+    with TestClient(app) as c:
+        r = c.post("/api/actions/resume", json={"conversation_id": 3, "confirm": True})
+    assert r.status_code == 200
+    assert "这单可以退" in r.text
+    assert fake.last == (3, {"confirm": True})
+
+
 def test_create_refund_writes_ticket(sqlite_session_local):
     with sqlite_session_local() as s:
         conv = Conversation(user_id="sid1", status="进行中")

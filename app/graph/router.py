@@ -17,6 +17,7 @@ _ROUTE_BY_INTENT = {
     "售后": "refund_flow",
     "物流": "business",
     "订单": "business",
+    "建工单": "business",
 }
 
 

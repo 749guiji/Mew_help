@@ -626,6 +626,85 @@ body {
   cursor: not-allowed;
 }
 
+/* 工单预览卡片 */
+.ticket-preview {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ticket-preview-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ticket-preview-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.ticket-label {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.ticket-value {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ticket-desc {
+  color: var(--text);
+  flex: 1;
+  word-break: break-word;
+}
+
+.ticket-preview-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ticket-confirm {
+  border: none;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--dur);
+}
+
+.ticket-confirm:hover {
+  background: var(--brand-hover);
+}
+
+.ticket-cancel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur);
+}
+
+.ticket-cancel:hover {
+  border-color: var(--brand);
+}
+
 /* 会话侧栏 */
 body {
   gap: 12px;
