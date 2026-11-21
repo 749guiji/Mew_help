@@ -246,3 +246,74 @@ def script_reply(state) -> dict:
     else:
         text = "我暂时还不会回答这个，请告诉我您对我们产品的任何咨询~商品、订单、物流、售后都可以问我哦。"
     return {"messages": [AIMessage(content=text)], "visited": ["script_reply"]}
+
+
+async def confirm_ticket(state) -> dict:
+    """建工单确认流:interrupt 推工单预览;resume 放行落 tickets 或按权限拒绝落审计。
+
+    无副作用:resume 时本节点从头重跑,interrupt 之前只读 state。
+    """
+    from langgraph.types import interrupt
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    from app.tools import registry
+    from app.tools.audit import log_tool_audit
+    from app.tools.executor import ToolExecutor
+
+    pending = state.get("pending_ticket") or {}
+    args = pending.get("args") or {}
+    tool_call_id = pending.get("tool_call_id")
+    conversation_id = state.get("conversation_id")
+
+    decision = interrupt(
+        {
+            "type": "ticket_preview",
+            "draft": {
+                "ticket_type": args.get("ticket_type", ""),
+                "description": args.get("description", ""),
+            },
+        }
+    )
+
+    confirmed = isinstance(decision, dict) and decision.get("confirm") is True
+    if confirmed:
+        tool = registry.get("create_ticket")
+        try:
+            ticket_no = await ToolExecutor().execute_confirmed(
+                tool, args, tool_call_id=tool_call_id, conversation_id=conversation_id
+            )
+        except Exception:
+            return {
+                "messages": [AIMessage(content="工单创建失败，请稍后重试或联系人工客服。")],
+                "pending_ticket": None,
+                "visited": ["confirm_ticket"],
+            }
+        return {
+            "messages": [
+                ToolMessage(content=ticket_no, tool_call_id=tool_call_id, name="create_ticket"),
+                AIMessage(content=f"工单已创建，工单号 {ticket_no}，我们会尽快跟进处理。"),
+            ],
+            "pending_ticket": None,
+            "visited": ["confirm_ticket"],
+        }
+
+    # 取消 / 载荷形状不对 → 不执行,按权限拒绝落审计
+    log_tool_audit(
+        conversation_id=conversation_id,
+        tool_call_id=tool_call_id,
+        tool_name="create_ticket",
+        tool_source="builtin",
+        mcp_server=None,
+        arguments=args,
+        status="权限拒绝",
+        error_message="用户取消建工单",
+        retry_count=0,
+    )
+    return {
+        "messages": [
+            ToolMessage(content="已取消建工单", tool_call_id=tool_call_id, name="create_ticket"),
+            AIMessage(content="已取消建工单，如需帮助请随时告诉我。"),
+        ],
+        "pending_ticket": None,
+        "visited": ["confirm_ticket"],
+    }

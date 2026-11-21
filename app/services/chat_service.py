@@ -120,15 +120,16 @@ class ChatService:
             before_count = len(before.values.get("messages", []))
         result = await graph.ainvoke(invoke_input, config=config)
 
-        # 中断帧:退款子流程缺订单号,图暂停在 fetch_order
+        # 中断帧:退款子流程缺订单号(select_order)或建工单预览(ticket_preview)
         intr = result.get("__interrupt__")
         if intr:
             payload = intr[0].value
-            yield {
-                "type": "interrupt",
-                "kind": payload.get("type", ""),
-                "orders": payload.get("orders", []),
-            }
+            frame = {"type": "interrupt", "kind": payload.get("type", "")}
+            if frame["kind"] == "select_order":
+                frame["orders"] = payload.get("orders", [])
+            elif frame["kind"] == "ticket_preview":
+                frame["draft"] = payload.get("draft", {})
+            yield frame
             return
 
         # 只取本轮新增的消息,避免回放历史轮次的工具徽章 / 旧答案
@@ -190,14 +191,17 @@ class ChatService:
             yield {"type": "error", "message": str(e)}
 
     async def stream_resume(
-        self, conversation_id: int, order_id: str
+        self, conversation_id: int, payload
     ) -> AsyncIterator[dict]:
-        """前端点选订单后续跑同一会话的暂停流(Command(resume) 回填订单号)。"""
+        """续跑暂停流:payload 透传给 Command(resume)。
+
+        订单选择=order_id 字符串,建工单确认={"confirm": bool}。
+        """
         try:
             with SessionLocal() as s:
                 conv = s.get(Conversation, conversation_id)
                 user_id = conv.user_id if conv else "guest"
-            async for ev in self._stream_invoke(conversation_id, user_id, Command(resume=order_id)):
+            async for ev in self._stream_invoke(conversation_id, user_id, Command(resume=payload)):
                 yield ev
         except Exception as e:
             yield {"type": "error", "message": str(e)}

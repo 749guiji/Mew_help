@@ -19,11 +19,14 @@ router = APIRouter()
 
 class ResumeRequest(BaseModel):
     conversation_id: int
-    order_id: str
+    order_id: str | None = None
+    confirm: bool | None = None
 
     @field_validator("order_id")
     @classmethod
-    def _not_blank(cls, v: str) -> str:
+    def _not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
         v = v.strip()
         if not v:
             raise ValueError("must not be blank")
@@ -46,11 +49,14 @@ class CreateRefundRequest(BaseModel):
 
 @router.post("/api/actions/resume")
 async def resume(payload: ResumeRequest, request: Request) -> StreamingResponse:
-    """订单选择器点选后续跑暂停的退款子流程(SSE,事件与 /chat 同构)。"""
+    """续跑暂停流(SSE,事件与 /chat 同构):订单选择(order_id)或建工单确认(confirm)。"""
     svc = request.app.state.chat_service
+    resume_value = (
+        {"confirm": payload.confirm} if payload.confirm is not None else payload.order_id
+    )
 
     async def gen():
-        async for event in svc.stream_resume(payload.conversation_id, payload.order_id):
+        async for event in svc.stream_resume(payload.conversation_id, resume_value):
             yield f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
