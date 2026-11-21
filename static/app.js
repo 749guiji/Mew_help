@@ -293,6 +293,7 @@ async function streamTo(fetchUrl, body, contentEl) {
     if (ctx.citations.length) linkifyCitations(textSpan, ctx.citations);
     addFeedback(contentEl);
     scrollToBottom();
+    loadConversations();
   }
 }
 
@@ -531,6 +532,15 @@ async function loadConversations() {
     const { conversations } = await res.json();
     const el = document.getElementById("conversations");
     el.innerHTML = "";
+    // 无当前会话时,顶部显示一条「新对话」占位,点它回到空白对话(不丢已有会话)
+    if (state.conversationId == null) {
+      const newItem = document.createElement("button");
+      newItem.className = "conv-item active";
+      newItem.type = "button";
+      newItem.textContent = "💬 新对话";
+      newItem.addEventListener("click", newConversation);
+      el.appendChild(newItem);
+    }
     for (const c of conversations) {
       const item = document.createElement("button");
       item.className = "conv-item" + (c.id === state.conversationId ? " active" : "");
