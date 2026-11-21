@@ -65,3 +65,17 @@ def test_db_unavailable_returns_503(monkeypatch):
         r = c.get("/api/conversations?user_id=u1")
     assert r.status_code == 503
     assert "数据库" in r.json()["detail"]
+
+
+def test_create_conversation(sqlite_session_local):
+    app = create_app(extraction_service=_FakeExtraction())
+    with TestClient(app) as c:
+        r = c.post("/api/conversations", json={"user_id": "u1"})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+    assert isinstance(cid, int)
+
+    with sqlite_session_local() as s:
+        conv = s.query(Conversation).filter(Conversation.user_id == "u1").one()
+        assert conv.id == cid
+        assert conv.status == "进行中"

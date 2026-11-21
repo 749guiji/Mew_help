@@ -1,13 +1,37 @@
-"""会话侧栏只读接口:列用户会话 + 回载历史原文。"""
+"""会话侧栏接口:列用户会话 + 回载历史原文 + 新建空会话。"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter
+from pydantic import BaseModel, field_validator
 
 from app.db import SessionLocal
 from app.db.models import Conversation, Message
 
 router = APIRouter()
+
+
+class ConversationCreate(BaseModel):
+    user_id: str
+
+    @field_validator("user_id")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
+@router.post("/api/conversations")
+def create_conversation(payload: ConversationCreate) -> dict:
+    """新建一个空会话(供前端「新对话」立即落一条,而非发首条消息才建)。"""
+    with SessionLocal() as s:
+        conv = Conversation(user_id=payload.user_id, status="进行中")
+        s.add(conv)
+        s.commit()
+        s.refresh(conv)
+        return {"id": conv.id}
 
 
 @router.get("/api/conversations")
