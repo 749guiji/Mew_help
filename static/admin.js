@@ -33,8 +33,9 @@ async function loadCards() {
         `<div class="kb-chunk-a">读取失败：${esc(card.error)}</div>`;
     } else {
       const m = card.metrics || {};
+      const parts = Object.entries(m).map(([k, v]) => `${k} ${v}`).join(" · ");
       div.innerHTML = `<div class="kb-chunk-head">${esc(card.title)}</div>` +
-        `<div class="kb-chunk-a">块数 ${m.chunks ?? "-"} · 待向量化 ${m.pending ?? "-"} · Milvus ${m.milvus ?? "-"}</div>`;
+        `<div class="kb-chunk-a">${parts || "-"}</div>`;
     }
     cardsEl.appendChild(div);
   }

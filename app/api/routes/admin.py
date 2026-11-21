@@ -34,7 +34,7 @@ def _kb_card() -> dict:
         return {
             "key": "kb",
             "title": "知识库",
-            "metrics": {"chunks": chunks, "pending": pending, "milvus": milvus},
+            "metrics": {"块数": chunks, "待向量化": pending, "Milvus": milvus},
             "error": None,
         }
     except Exception as exc:  # noqa: BLE001 - a missing dependency only affects this card
@@ -48,10 +48,14 @@ def _mcp_card() -> dict:
         from app.mcp.client import mcp_server_status
 
         status = asyncio.run(mcp_server_status())
+        labels = {"logistics": "物流", "aftersale": "售后"}
         return {
             "key": "mcp",
             "title": "MCP 服务",
-            "metrics": {name: "在线" if ok else "离线" for name, ok in status.items()},
+            "metrics": {
+                labels.get(name, name): "在线" if ok else "离线"
+                for name, ok in status.items()
+            },
             "error": None,
         }
     except Exception as exc:  # noqa: BLE001
