@@ -2,6 +2,7 @@
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -41,6 +42,8 @@ class Conversation(Base):
     summary = Column(Text, nullable=True)
     summary_upto_msg_id = Column(BIGINT_UNSIGNED, nullable=True)
     layer1_from_msg_id = Column(BIGINT_UNSIGNED, nullable=True)
+    title = Column(String(128), nullable=True)  # ch08 UX:用户自定义标题
+    pinned = Column(Boolean, nullable=False, server_default="0")  # ch08 UX:置顶
 
 
 class ConversationSummary(Base):

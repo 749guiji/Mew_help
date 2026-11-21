@@ -79,3 +79,61 @@ def test_create_conversation(sqlite_session_local):
         conv = s.query(Conversation).filter(Conversation.user_id == "u1").one()
         assert conv.id == cid
         assert conv.status == "进行中"
+
+
+def test_rename_and_pin_conversation(sqlite_session_local):
+    with sqlite_session_local() as s:
+        c1 = Conversation(user_id="u1", status="进行中")
+        s.add(c1)
+        s.commit()
+        s.refresh(c1)
+        cid = c1.id
+
+    app = create_app(extraction_service=_FakeExtraction())
+    with TestClient(app) as c:
+        r = c.patch(f"/api/conversations/{cid}", json={"title": "我的订单", "pinned": True})
+    assert r.status_code == 200
+    assert r.json()["title"] == "我的订单"
+    assert r.json()["pinned"] is True
+
+    with sqlite_session_local() as s:
+        conv = s.get(Conversation, cid)
+        assert conv.title == "我的订单"
+        assert conv.pinned is True
+
+
+def test_list_sorts_pinned_first(sqlite_session_local):
+    with sqlite_session_local() as s:
+        c1 = Conversation(user_id="u1", status="进行中", pinned=False)
+        c2 = Conversation(user_id="u1", status="进行中", pinned=True)
+        s.add_all([c1, c2])
+        s.commit()
+        s.refresh(c1)
+        s.refresh(c2)
+        c1_id, c2_id = c1.id, c2.id
+
+    app = create_app(extraction_service=_FakeExtraction())
+    with TestClient(app) as c:
+        r = c.get("/api/conversations", params={"user_id": "u1"})
+    convs = r.json()["conversations"]
+    assert [x["id"] for x in convs] == [c2_id, c1_id]  # 置顶在前
+
+
+def test_delete_conversation_cascades(sqlite_session_local):
+    with sqlite_session_local() as s:
+        conv = Conversation(user_id="u1", status="进行中")
+        s.add(conv)
+        s.commit()
+        s.refresh(conv)
+        s.add(Message(conversation_id=conv.id, role="user", content="你好"))
+        s.commit()
+        cid = conv.id
+
+    app = create_app(extraction_service=_FakeExtraction())
+    with TestClient(app) as c:
+        r = c.delete(f"/api/conversations/{cid}")
+    assert r.status_code == 200
+
+    with sqlite_session_local() as s:
+        assert s.get(Conversation, cid) is None
+        assert s.query(Message).filter(Message.conversation_id == cid).count() == 0

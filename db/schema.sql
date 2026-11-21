@@ -209,3 +209,13 @@ CREATE TABLE tool_audit_logs (
   KEY idx_tool_name (tool_name),
   KEY idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工具调用审计留痕';
+
+-- =============================================================
+-- ch08 UX · 会话侧栏:重命名(title)+ 置顶(pinned)
+-- 存量库迁移(幂等):conversations 加两列
+-- =============================================================
+SET NAMES utf8mb4;
+
+ALTER TABLE conversations
+  ADD COLUMN title  VARCHAR(128)  NULL COMMENT '用户自定义标题,空则回退首问预览' AFTER user_id,
+  ADD COLUMN pinned TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '是否置顶' AFTER title;

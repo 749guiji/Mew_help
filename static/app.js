@@ -524,7 +524,7 @@ citeModal.addEventListener("click", (e) => {
   if (e.target === citeModal) closeCitation();
 });
 
-// 会话侧栏:列用户会话、切换回载、新对话;加载失败静默降级不影响聊天。
+// 会话侧栏:列/切换/新建/重命名/置顶/删除;加载失败静默降级不影响聊天。
 async function loadConversations() {
   try {
     const res = await fetch("/api/conversations?user_id=" + encodeURIComponent(state.userId));
@@ -533,15 +533,81 @@ async function loadConversations() {
     const el = document.getElementById("conversations");
     el.innerHTML = "";
     for (const c of conversations) {
-      const item = document.createElement("button");
+      const item = document.createElement("div");
       item.className = "conv-item" + (c.id === state.conversationId ? " active" : "");
-      item.type = "button";
-      item.textContent = (c.summarized ? "📄 " : "") + (c.preview || "（新对话）");
-      item.addEventListener("click", () => switchConversation(c.id));
+
+      const main = document.createElement("button");
+      main.type = "button";
+      main.className = "conv-main";
+      main.textContent = (c.summarized ? "📄 " : "") + (c.title || c.preview || "（新对话）");
+      main.title = c.title || c.preview || "";
+      main.addEventListener("click", () => switchConversation(c.id));
+      item.appendChild(main);
+
+      const actions = document.createElement("div");
+      actions.className = "conv-actions";
+
+      const pinBtn = document.createElement("button");
+      pinBtn.type = "button";
+      pinBtn.className = "conv-action" + (c.pinned ? " pinned" : "");
+      pinBtn.textContent = "📌";
+      pinBtn.title = c.pinned ? "取消置顶" : "置顶";
+      pinBtn.addEventListener("click", () => togglePin(c.id, !c.pinned));
+      actions.appendChild(pinBtn);
+
+      const renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.className = "conv-action";
+      renameBtn.textContent = "✏️";
+      renameBtn.title = "重命名";
+      renameBtn.addEventListener("click", () => renameConversation(c.id, c.title || ""));
+      actions.appendChild(renameBtn);
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "conv-action danger";
+      delBtn.textContent = "🗑";
+      delBtn.title = "删除";
+      delBtn.addEventListener("click", () => deleteConversation(c.id));
+      actions.appendChild(delBtn);
+
+      item.appendChild(actions);
       el.appendChild(item);
     }
   } catch (err) {
     /* 静默降级 */
+  }
+}
+
+async function renameConversation(id, current) {
+  const title = prompt("重命名会话:", current);
+  if (title === null) return; // 取消
+  await fetch("/api/conversations/" + id, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: title.trim() || null }),
+  });
+  loadConversations();
+}
+
+async function togglePin(id, pinned) {
+  await fetch("/api/conversations/" + id, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pinned }),
+  });
+  loadConversations();
+}
+
+async function deleteConversation(id) {
+  if (!confirm("删除这个会话?它的消息会一并删除,不可恢复。")) return;
+  const res = await fetch("/api/conversations/" + id, { method: "DELETE" });
+  if (res.ok) {
+    if (state.conversationId === id) {
+      state.conversationId = null;
+      document.getElementById("messages").innerHTML = "";
+    }
+    loadConversations();
   }
 }
 
