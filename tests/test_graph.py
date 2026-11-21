@@ -12,8 +12,13 @@ from app.kb.hybrid import ScoredChunk
 
 @pytest.fixture(autouse=True)
 def _no_real_coref(monkeypatch):
-    """ch06 起 resolve_coref 走 LLM;图测试只关心路由,原样透传避开真模型。"""
+    """ch06 起 resolve_coref 走 LLM;ch09 起知识类 self_check 也走 LLM——图测试只关心路由,避开真模型。"""
+    import app.services.generation_quality as gq
+
     monkeypatch.setattr(nodes, "resolve_coref", lambda llm, q, h: q)
+    monkeypatch.setattr(
+        gq, "self_check", lambda llm, q, e: gq.SelfCheckResult(sufficient=True, reason="")
+    )
 
 
 def _invoke(graph, query):

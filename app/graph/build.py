@@ -93,6 +93,7 @@ def build_graph(checkpointer=None):
     g.add_node("fetch_order", nodes.fetch_order)
     g.add_node("retrieve_policy", nodes.retrieve_policy)
     g.add_node("confirm_ticket", nodes.confirm_ticket)
+    g.add_node("self_check", nodes.self_check_node)
     g.add_node("log", nodes.log_node)
 
     g.add_edge(START, "reset")
@@ -118,13 +119,21 @@ def build_graph(checkpointer=None):
         lambda s: s.get("confidence_pass"),
         {True: "agent", False: "fallback"},
     )
-    # agent 产出 pending_ticket 时先进 confirm_ticket 走 interrupt 确认,否则直接落 log
+    # agent 之后:有 pending_ticket → confirm_ticket(interrupt 确认);知识类 → self_check(事后落池);否则 log
+    def _after_agent(s):
+        if s.get("pending_ticket"):
+            return "confirm_ticket"
+        if s.get("route") == "knowledge":
+            return "self_check"
+        return "log"
+
     g.add_conditional_edges(
         "agent",
-        lambda s: "confirm_ticket" if s.get("pending_ticket") else "log",
-        {"confirm_ticket": "confirm_ticket", "log": "log"},
+        _after_agent,
+        {"confirm_ticket": "confirm_ticket", "self_check": "self_check", "log": "log"},
     )
     g.add_edge("confirm_ticket", "log")
+    g.add_edge("self_check", "log")
     g.add_edge("fallback", "log")
     g.add_edge("complaint", "log")
     g.add_edge("script_reply", "log")
