@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     tool_timeout_seconds: float = 120.0
     tool_retries: int = 2
     mcp_write_tools: list[str] = []
+    mcp_logistics_url: str = "http://127.0.0.1:8100/mcp"
+    mcp_aftersale_url: str = "http://127.0.0.1:8101/mcp"
 
     @model_validator(mode="after")
     def _fill_intent_model_defaults(self) -> "Settings":

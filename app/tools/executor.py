@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+import httpx
 import jsonschema
 
 from app.core.config import get_settings
@@ -19,8 +20,9 @@ from app.tools.audit import log_tool_audit
 from app.tools.context import current_conversation_id
 from app.tools.registry import RegisteredTool
 
-# 网络暂态异常:重试只给这类。Task 5 接入 MCP 后把 MCP 传输/会话异常加进来。
-TRANSIENT_EXCEPTIONS = (asyncio.TimeoutError,)
+# 网络暂态异常:重试只给这类。httpx.TransportError 覆盖 MCP HTTP 传输的
+# 连接/读超时/网络错误;ConnectionError 兜底 socket 级失败。
+TRANSIENT_EXCEPTIONS = (asyncio.TimeoutError, httpx.TransportError, ConnectionError)
 
 
 @dataclass
