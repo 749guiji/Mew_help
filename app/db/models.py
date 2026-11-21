@@ -203,3 +203,29 @@ class FaithCase(Base):
     )
     resolution = Column(String(300), nullable=True)
     resolved_at = Column(DateTime, nullable=True)
+
+
+class ToolAuditLog(Base):
+    """工具调用审计留痕(ch08):内置和 MCP 工具都记,被权限拒/被校验拦也落一条。
+
+    不挂外键:审计写入不能被引用约束拦住,conversation_id 只建普通索引。
+    """
+
+    __tablename__ = "tool_audit_logs"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    conversation_id = Column(BIGINT_UNSIGNED, nullable=True, index=True)
+    tool_call_id = Column(String(64), nullable=True)
+    tool_name = Column(String(128), nullable=False)
+    tool_source = Column(Enum("builtin", "mcp", native_enum=False), nullable=False)
+    mcp_server = Column(String(64), nullable=True)
+    arguments = Column(JSON, nullable=True)
+    result_summary = Column(Text, nullable=True)
+    status = Column(
+        Enum("成功", "失败", "超时", "校验拦下", "权限拒绝", native_enum=False),
+        nullable=False,
+    )
+    error_message = Column(String(512), nullable=True)
+    retry_count = Column(Integer, nullable=False, server_default="0")
+    duration_ms = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
