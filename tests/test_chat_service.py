@@ -31,8 +31,7 @@ class FakeGraph:
 
         return _Snapshot({"messages": list(self._messages)})
 
-    async def ainvoke(self, input, config=None):
-        self.inputs.append((input, config))
+    def _ingest(self, input):
         if isinstance(input, dict):
             for m in input.get("messages", []):
                 if isinstance(m, tuple):
@@ -41,9 +40,25 @@ class FakeGraph:
                     self._messages.append(m)
         for m in self.result.get("messages", []):
             self._messages.append(m)
+
+    def _final_state(self):
         state = dict(self.result)
         state["messages"] = list(self._messages)
         return state
+
+    async def ainvoke(self, input, config=None):
+        self.inputs.append((input, config))
+        self._ingest(input)
+        return self._final_state()
+
+    async def astream(self, input, config=None, stream_mode=None):
+        self.inputs.append((input, config))
+        self._ingest(input)
+        # 模拟 messages 流式:每个有内容的 AIMessage 作一个 token 块
+        for m in self.result.get("messages", []):
+            if isinstance(m, AIMessage) and m.content:
+                yield ("messages", (m, {"langgraph_node": "agent"}))
+        yield ("values", self._final_state())
 
 
 @pytest.fixture(autouse=True)
@@ -215,3 +230,22 @@ def test_stream_resume_sends_command(sqlite_session_local):
     inp = graph.inputs[0][0]
     assert isinstance(inp, Command) and inp.resume == "1001"
     assert [e["content"] for e in ev if e["type"] == "token"] == ["这单可以退"]
+
+
+class _StreamingGraph(FakeGraph):
+    """把一个答案拆成多块 token,验证 chat_service 逐块转发(真流式)。"""
+
+    async def astream(self, input, config=None, stream_mode=None):
+        self.inputs.append((input, config))
+        self._ingest(input)
+        for piece in ("直", "接", "回", "答"):
+            yield ("messages", (AIMessage(content=piece), {"langgraph_node": "agent"}))
+        yield ("values", self._final_state())
+
+
+def test_stream_forwards_multiple_token_chunks(sqlite_session_local):
+    graph = _StreamingGraph({"messages": [AIMessage(content="直接回答")]})
+    svc = ChatService(graph=graph)
+    ev = asyncio.run(collect(svc.stream_chat(None, "你好")))
+    tokens = [e["content"] for e in ev if e["type"] == "token"]
+    assert tokens == ["直", "接", "回", "答"]  # 逐块转发,不是整段一次性

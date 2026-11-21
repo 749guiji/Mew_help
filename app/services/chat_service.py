@@ -96,9 +96,11 @@ class ChatService:
     async def _stream_invoke(
         self, conv_id: int, user_id: str, invoke_input
     ) -> AsyncIterator[dict]:
-        """ainvoke(正常或 Command(resume))后,吐本轮事件;遇中断发 interrupt 帧。
+        """astream(messages+values)逐 token 吐答案;遇中断发 interrupt 帧。
 
         thread_id=conversation_id;checkpoint 空则从 MySQL 回灌 user/assistant 历史。
+        ``stream_mode="messages"`` 逐 token 流式答案(agent 的 LLM 输出 + 固定话术),
+        ``stream_mode="values"`` 拿最终状态(工具徽章/引用/动作)与中断载荷。
         """
         graph = self._graph if self._graph is not None else _get_graph()
         config = {"configurable": {"thread_id": str(conv_id)}}
@@ -118,22 +120,35 @@ class ChatService:
         else:
             before = await graph.aget_state(config)
             before_count = len(before.values.get("messages", []))
-        result = await graph.ainvoke(invoke_input, config=config)
+
+        final_state: dict | None = None
+        interrupt_payload = None
+        async for mode, data in graph.astream(
+            invoke_input, config=config, stream_mode=["messages", "values"]
+        ):
+            if mode == "messages":
+                chunk, meta = data
+                node = meta.get("langgraph_node", "") if isinstance(meta, dict) else ""
+                # coref/意图 是内部 LLM 调用,不吐给用户;空内容(工具调用步)也跳过
+                if node not in ("coref", "intent") and chunk.content:
+                    yield {"type": "token", "content": chunk.content}
+            elif mode == "values":
+                final_state = data
+                if data.get("__interrupt__"):
+                    interrupt_payload = data["__interrupt__"][0].value
 
         # 中断帧:退款子流程缺订单号(select_order)或建工单预览(ticket_preview)
-        intr = result.get("__interrupt__")
-        if intr:
-            payload = intr[0].value
-            frame = {"type": "interrupt", "kind": payload.get("type", "")}
+        if interrupt_payload is not None:
+            frame = {"type": "interrupt", "kind": interrupt_payload.get("type", "")}
             if frame["kind"] == "select_order":
-                frame["orders"] = payload.get("orders", [])
+                frame["orders"] = interrupt_payload.get("orders", [])
             elif frame["kind"] == "ticket_preview":
-                frame["draft"] = payload.get("draft", {})
+                frame["draft"] = interrupt_payload.get("draft", {})
             yield frame
             return
 
         # 只取本轮新增的消息,避免回放历史轮次的工具徽章 / 旧答案
-        new_msgs = result.get("messages", [])[before_count:]
+        new_msgs = (final_state or {}).get("messages", [])[before_count:]
 
         # 工具帧(本轮 Agent 已执行完的工具,回放给前端徽章)
         for m in new_msgs:
@@ -142,28 +157,21 @@ class ChatService:
                     yield {"type": "tool", "name": tc["name"], "status": "done"}
 
         # 引用帧(知识类检索块)
-        chunks = result.get("retrieval_chunks") or []
+        chunks = (final_state or {}).get("retrieval_chunks") or []
         if chunks:
             from app.services.generation_quality import build_citations
 
             yield {"type": "citations", "citations": build_citations(chunks)}
 
-        # 答案帧(本轮最后一个有内容的 AIMessage)
-        answer = ""
-        for m in reversed(new_msgs):
-            if isinstance(m, AIMessage) and m.content:
-                answer = m.content
-                break
-        if answer:
-            yield {"type": "token", "content": answer}
+        # 答案已在 stream_mode="messages" 逐 token 吐过,这里不再重复
 
         # 转人工/建工单建议帧
-        handoff = result.get("handoff_suggestions") or []
+        handoff = (final_state or {}).get("handoff_suggestions") or []
         if handoff:
             yield {"type": "handoff", "suggestions": handoff}
 
         # 动作帧(退款表单 refund_form,来自 submit_refund 拦截)
-        actions = result.get("suggested_actions") or []
+        actions = (final_state or {}).get("suggested_actions") or []
         if actions:
             yield {"type": "actions", "items": actions}
 
