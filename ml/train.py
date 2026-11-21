@@ -8,8 +8,9 @@ from pathlib import Path
 
 import torch
 from sklearn.metrics import f1_score
+from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
-from transformers import AdamW, AutoTokenizer
+from transformers import AutoTokenizer
 
 from ml.model import TopicClassifier
 from ml.predict import predict
