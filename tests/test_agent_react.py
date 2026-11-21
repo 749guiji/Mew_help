@@ -88,6 +88,23 @@ def test_read_tool_call_returns_tool_message():
     assert result["messages"][-1].content == "订单已发货"
 
 
+def test_failed_tool_records_error_status():
+    responses = [
+        AIMessage(
+            content="",
+            tool_calls=[{"name": "query_order", "args": {"order_id": "1001"}, "id": "c1"}],
+        ),
+        AIMessage(content="抱歉没查到"),
+    ]
+    llm = FakeLLM(responses)
+    executor = FakeExecutor({"query_order": ToolResult("error", "[工具错误] boom")})
+    state = {"messages": [HumanMessage(content="订单 1001")]}
+
+    result = _run(state, llm, executor, [_rt("query_order")])
+
+    assert result["tool_status"]["c1"] == "error"
+
+
 def test_multi_step():
     responses = [
         AIMessage(

@@ -35,3 +35,5 @@ class GraphState(TypedDict, total=False):
     intent_confidence: float | None
     # ch08:待前端确认的建工单预览(agent 记下 → confirm_ticket 节点 interrupt)
     pending_ticket: dict | None
+    # ch08:本轮工具执行结果 tool_call_id → done/error(前端徽章区分成败)
+    tool_status: dict[str, str]

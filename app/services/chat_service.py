@@ -150,11 +150,16 @@ class ChatService:
         # 只取本轮新增的消息,避免回放历史轮次的工具徽章 / 旧答案
         new_msgs = (final_state or {}).get("messages", [])[before_count:]
 
-        # 工具帧(本轮 Agent 已执行完的工具,回放给前端徽章)
+        # 工具帧(本轮 Agent 已执行完的工具,回放给前端徽章;失败标 error)
+        tool_status = (final_state or {}).get("tool_status", {})
         for m in new_msgs:
             if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
                 for tc in m.tool_calls:
-                    yield {"type": "tool", "name": tc["name"], "status": "done"}
+                    yield {
+                        "type": "tool",
+                        "name": tc["name"],
+                        "status": tool_status.get(tc["id"], "done"),
+                    }
 
         # 引用帧(知识类检索块)
         chunks = (final_state or {}).get("retrieval_chunks") or []

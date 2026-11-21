@@ -41,7 +41,24 @@ def _kb_card() -> dict:
         return {"key": "kb", "title": "知识库", "metrics": {}, "error": str(exc)}
 
 
-CARD_BUILDERS = [_kb_card]
+def _mcp_card() -> dict:
+    try:
+        import asyncio
+
+        from app.mcp.client import mcp_server_status
+
+        status = asyncio.run(mcp_server_status())
+        return {
+            "key": "mcp",
+            "title": "MCP 服务",
+            "metrics": {name: "在线" if ok else "离线" for name, ok in status.items()},
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"key": "mcp", "title": "MCP 服务", "metrics": {}, "error": str(exc)}
+
+
+CARD_BUILDERS = [_kb_card, _mcp_card]
 
 
 @router.get("/admin")

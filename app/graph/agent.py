@@ -113,6 +113,7 @@ async def react_agent_node(
     produced: list = []
     suggested_actions: list = []
     pending_ticket: dict | None = None
+    tool_status: dict[str, str] = {}
     for _ in range(max_steps):
         _trim_history(history, token_budget * 4)
         ai = await bound_llm.ainvoke(history)
@@ -123,6 +124,7 @@ async def react_agent_node(
         for tc in ai.tool_calls:
             if tc["name"] == "submit_refund":
                 # 拦截:不执行,合成 ToolMessage 促收敛,记 refund_form 前端动作
+                tool_status[tc["id"]] = "done"
                 suggested_actions.append(
                     {
                         "type": "refund_form",
@@ -140,6 +142,7 @@ async def react_agent_node(
             else:
                 rt = name_to_tool.get(tc["name"])
                 if rt is None:
+                    tool_status[tc["id"]] = "error"
                     tm = ToolMessage(
                         content="[工具错误] 未找到工具", tool_call_id=tc["id"], name=tc["name"]
                     )
@@ -150,6 +153,7 @@ async def react_agent_node(
                     if result.kind == "needs_confirmation":
                         pending_ticket = {"tool_call_id": tc["id"], "args": result.draft}
                         break  # 交 confirm_ticket 节点,不再执行
+                    tool_status[tc["id"]] = "done" if result.kind == "ok" else "error"
                     tm = ToolMessage(content=result.content, tool_call_id=tc["id"], name=tc["name"])
             produced.append(tm)
             history.append(tm)
@@ -160,5 +164,6 @@ async def react_agent_node(
         "messages": produced,
         "suggested_actions": suggested_actions,
         "pending_ticket": pending_ticket,
+        "tool_status": tool_status,
         "visited": ["agent"],
     }

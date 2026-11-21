@@ -68,3 +68,17 @@ async def discover_mcp_tools(client=None) -> list[RegisteredTool]:
                 )
             )
     return out
+
+
+async def mcp_server_status(client=None) -> dict[str, bool]:
+    """各 MCP server 是否可达(供后台状态卡展示,不抛)。"""
+    client = client if client is not None else _get_client()
+    out: dict[str, bool] = {}
+    for name, _ in _SERVERS:
+        try:
+            await client.get_tools(server_name=name)
+            out[name] = True
+        except Exception as e:  # noqa: BLE001
+            logger.warning("MCP server %s unreachable: %s", name, e)
+            out[name] = False
+    return out

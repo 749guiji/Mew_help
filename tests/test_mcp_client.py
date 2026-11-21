@@ -46,3 +46,11 @@ def test_discover_skips_builtin_name_collision():
     client = FakeClient({"logistics": [FakeTool("query_order")]})  # query_order 是内置工具
     tools = asyncio.run(discover_mcp_tools(client=client))
     assert "query_order" not in {t.name for t in tools}
+
+
+def test_mcp_server_status_marks_unreachable():
+    from app.mcp.client import mcp_server_status
+
+    client = FakeClient({"logistics": [FakeTool("query_logistics")]}, fail={"aftersale"})
+    status = asyncio.run(mcp_server_status(client=client))
+    assert status == {"logistics": True, "aftersale": False}

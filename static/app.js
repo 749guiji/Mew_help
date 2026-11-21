@@ -195,7 +195,7 @@ function addFeedback(contentEl) {
 
 function dispatch(evt, ctx) {
   if (evt.type === "meta") {
-    state.conversationId = parseInt(evt.session_id, 10);
+    state.conversationId = evt.session_id != null ? parseInt(evt.session_id, 10) : null;
   } else if (evt.type === "token") {
     if (ctx.typing) {
       ctx.typing.remove();

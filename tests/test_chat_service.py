@@ -138,6 +138,22 @@ def test_business_emits_tool_frames(sqlite_session_local):
     assert [e["content"] for e in ev if e["type"] == "token"] == ["订单在派送中"]
 
 
+def test_failed_tool_emits_error_badge(sqlite_session_local):
+    graph = FakeGraph({
+        "messages": [
+            HumanMessage(content="订单 1001 物流"),
+            AIMessage(content="", tool_calls=[{"name": "query_logistics", "args": {}, "id": "c1"}]),
+            ToolMessage(content="[工具错误] boom", tool_call_id="c1"),
+            AIMessage(content="抱歉查不到"),
+        ],
+        "tool_status": {"c1": "error"},
+    })
+    svc = ChatService(graph=graph)
+    ev = asyncio.run(collect(svc.stream_chat(None, "订单 1001 物流")))
+    tools = [e for e in ev if e["type"] == "tool"]
+    assert tools == [{"type": "tool", "name": "query_logistics", "status": "error"}]
+
+
 def test_second_turn_uses_same_thread_id(sqlite_session_local):
     graph = FakeGraph({"messages": [AIMessage(content="收到")]})
     svc = ChatService(graph=graph)

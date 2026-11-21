@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import OperationalError
 
 from app.api.routes import admin as admin_routes
 from app.api.routes import chat as chat_routes
@@ -26,6 +28,13 @@ def create_app(chat_service=None, extraction_service=None) -> FastAPI:
     from app.core.config import get_settings
 
     app = FastAPI()
+
+    # ch08:数据库不可用(如 MySQL 未起)时回结构化错误而非裸 500
+    @app.exception_handler(OperationalError)
+    async def _db_unavailable(request, exc):
+        return JSONResponse(
+            status_code=503, content={"detail": "数据库暂时不可用,请稍后再试。"}
+        )
 
     # ch07 启动自检:历史预算连一轮稳态都装不下就报警
     b = compute_budget(get_settings())

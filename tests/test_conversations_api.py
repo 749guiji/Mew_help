@@ -51,3 +51,17 @@ def test_list_and_messages(sqlite_session_local):
         r2 = c.get(f"/api/conversations/{c1_id}/messages")
         msgs = r2.json()["messages"]
         assert [m["content"] for m in msgs] == ["订单1001能退吗", "可以退"]
+
+
+def test_db_unavailable_returns_503(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    def boom():
+        raise OperationalError("SELECT", {}, Exception("db down"))
+
+    monkeypatch.setattr(conv_routes, "SessionLocal", boom)
+    app = create_app(extraction_service=_FakeExtraction())
+    with TestClient(app) as c:
+        r = c.get("/api/conversations?user_id=u1")
+    assert r.status_code == 503
+    assert "数据库" in r.json()["detail"]
