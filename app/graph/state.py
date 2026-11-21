@@ -33,3 +33,5 @@ class GraphState(TypedDict, total=False):
     order_id: str | None
     order_data: dict | None
     intent_confidence: float | None
+    # ch08:待前端确认的建工单预览(agent 记下 → confirm_ticket 节点 interrupt)
+    pending_ticket: dict | None

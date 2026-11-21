@@ -32,11 +32,6 @@ _register_builtin("submit_refund", submit_refund)
 _register_builtin("query_faq", query_faq)
 _register_builtin("create_ticket", create_ticket, read_only=False)
 
-# 向后兼容垫片:executor.py(Task 3 重写)与 agent.py(Task 6 重写)仍引用这两个
-# 旧名字,先按新 registry 推导,待各自任务重写后删除。
-TOOL_REGISTRY = {t.name: t.impl for t in registry.builtin()}
-ALL_TOOLS = [t.impl for t in registry.builtin()]
-
 __all__ = [
     "registry",
     "RegisteredTool",

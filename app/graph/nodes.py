@@ -19,7 +19,7 @@ from app.prompts.system import (
     INTENT_SYSTEM_PROMPT,
 )
 
-INTENTS = ("物流", "订单", "商品咨询", "退款退货", "售后", "投诉", "闲聊")
+INTENTS = ("物流", "订单", "商品咨询", "退款退货", "售后", "投诉", "闲聊", "建工单")
 
 # 合法意图 = 七类 + 「其他」兜底;越界的类别名一律归「其他」,防止 route 崩溃。
 VALID_INTENTS = INTENTS + ("其他",)
