@@ -265,3 +265,15 @@ def test_stream_forwards_multiple_token_chunks(sqlite_session_local):
     ev = asyncio.run(collect(svc.stream_chat(None, "你好")))
     tokens = [e["content"] for e in ev if e["type"] == "token"]
     assert tokens == ["直", "接", "回", "答"]  # 逐块转发,不是整段一次性
+
+
+def test_streaming_persists_concatenated_answer(sqlite_session_local):
+    graph = _StreamingGraph({"messages": [AIMessage(content="直接回答")]})
+    svc = ChatService(graph=graph)
+    asyncio.run(collect(svc.stream_chat(None, "问题")))
+    with sqlite_session_local() as s:
+        rows = s.query(Message).order_by(Message.id).all()
+        assert [(m.role, m.content) for m in rows] == [
+            ("user", "问题"),
+            ("assistant", "直接回答"),  # 流式多帧要累加成完整答案,不能只存最后一帧
+        ]

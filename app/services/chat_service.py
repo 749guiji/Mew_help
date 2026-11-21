@@ -195,7 +195,7 @@ class ChatService:
                 conv_id, user_id, {"messages": [("user", message)], "raw_query": message}
             ):
                 if ev["type"] == "token":
-                    answer = ev["content"]
+                    answer += ev["content"]  # 流式逐帧累加,别覆盖
                 yield ev
 
             self._save_message(conv_id, role="user", content=message)
