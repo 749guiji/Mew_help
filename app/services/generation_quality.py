@@ -54,6 +54,7 @@ def log_low_confidence(
     raw_question: str,
     source: str,
     reason: str | None = None,
+    retrieved_chunks: list | None = None,
 ) -> None:
     """Insert one ``LowConfidenceQuestion`` row and commit ``session``."""
     session.add(
@@ -62,6 +63,7 @@ def log_low_confidence(
             raw_question=raw_question,
             source=source,
             reason=reason,
+            retrieved_chunks=retrieved_chunks,
         )
     )
     session.commit()

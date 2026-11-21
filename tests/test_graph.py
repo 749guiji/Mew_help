@@ -7,6 +7,7 @@ import pytest
 from app.graph import agent, nodes
 from app.graph.build import build_graph
 from app.graph.nodes import IntentResult
+from app.kb.hybrid import ScoredChunk
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +30,13 @@ def test_knowledge_route_forces_retrieval(monkeypatch):
     monkeypatch.setattr(
         nodes,
         "retrieve_node",
-        lambda state: {"retrieval_chunks": [], "retrieval_score": 0.8, "visited": ["retrieve"]},
+        lambda state: {
+            "retrieval_chunks": [
+                ScoredChunk(1, 0.9, "运费说明", "运费", "policy", "满99包邮", "")
+            ],
+            "retrieval_score": 0.9,
+            "visited": ["retrieve"],
+        },
     )
 
     async def fake_agent(state):

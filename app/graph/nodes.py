@@ -134,29 +134,41 @@ def retrieve_node(state) -> dict:
 
 
 def gate_node(state) -> dict:
-    """置信度闸:按检索得分阈值判定是否进 Agent。"""
-    from app.core.config import get_settings
+    """知识类置信度闸(ch09):三信号 evidence_confidence 判是否进 Agent。"""
+    from app.graph.confidence import CONFIDENCE_THRESHOLD, compute_evidence_confidence
 
-    passed = gate_pass(state.get("retrieval_score"), get_settings().retrieval_threshold)
-    return {"confidence_pass": passed, "visited": ["gate"]}
+    r = compute_evidence_confidence(state.get("retrieval_chunks") or [])
+    passed = r["confidence"] >= CONFIDENCE_THRESHOLD
+    return {"confidence_pass": passed, "evidence_confidence": r, "visited": ["gate"]}
 
 
 def fallback_node(state) -> dict:
-    """知识类证据不足:回兜底话术 + 记 low_confidence_questions(数据飞轮预留)。"""
+    """知识类证据不足:回兜底话术 + 落池(带召回快照 + 置信度信号)。"""
     from langchain_core.messages import AIMessage
 
-    from app.core.config import get_settings
+    from app.graph.confidence import compute_evidence_confidence
     from app.db import SessionLocal
     from app.services.generation_quality import log_low_confidence
 
+    chunks = state.get("retrieval_chunks") or []
+    conf = state.get("evidence_confidence") or compute_evidence_confidence(chunks)
+    snapshot = [
+        {
+            "score": c.score,
+            "section_path": c.section_path or c.category,
+            "answer": c.answer[:200],
+        }
+        for c in chunks[:5]
+    ]
     try:
         with SessionLocal() as s:
             log_low_confidence(
                 s,
-                conversation_id=None,
+                conversation_id=state.get("conversation_id"),
                 raw_question=state.get("resolved_query", ""),
                 source="retrieval_low_conf",
-                reason=f"检索得分低于阈值 {get_settings().retrieval_threshold}",
+                reason=f"evidence_confidence={conf['confidence']} signals={conf['signals']}",
+                retrieved_chunks=snapshot or None,
             )
     except Exception:  # noqa: BLE001 - 记录失败不阻塞主流程
         pass

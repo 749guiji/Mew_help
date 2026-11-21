@@ -27,6 +27,7 @@ def _reset_node(state: GraphState) -> dict:
         "intent_confidence": None,
         "pending_ticket": None,
         "tool_status": {},
+        "evidence_confidence": None,
     }
 
 
