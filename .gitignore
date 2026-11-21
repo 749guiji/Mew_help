@@ -36,3 +36,4 @@ Thumbs.db
 
 # Job runner logs
 log/
+ml/artifacts/
