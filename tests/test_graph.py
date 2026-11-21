@@ -7,12 +7,18 @@ import pytest
 from app.graph import agent, nodes
 from app.graph.build import build_graph
 from app.graph.nodes import IntentResult
+from app.kb.hybrid import ScoredChunk
 
 
 @pytest.fixture(autouse=True)
 def _no_real_coref(monkeypatch):
-    """ch06 起 resolve_coref 走 LLM;图测试只关心路由,原样透传避开真模型。"""
+    """ch06 起 resolve_coref 走 LLM;ch09 起知识类 self_check 也走 LLM——图测试只关心路由,避开真模型。"""
+    import app.services.generation_quality as gq
+
     monkeypatch.setattr(nodes, "resolve_coref", lambda llm, q, h: q)
+    monkeypatch.setattr(
+        gq, "self_check", lambda llm, q, e: gq.SelfCheckResult(sufficient=True, reason="")
+    )
 
 
 def _invoke(graph, query):
@@ -29,7 +35,13 @@ def test_knowledge_route_forces_retrieval(monkeypatch):
     monkeypatch.setattr(
         nodes,
         "retrieve_node",
-        lambda state: {"retrieval_chunks": [], "retrieval_score": 0.8, "visited": ["retrieve"]},
+        lambda state: {
+            "retrieval_chunks": [
+                ScoredChunk(1, 0.9, "运费说明", "运费", "policy", "满99包邮", "")
+            ],
+            "retrieval_score": 0.9,
+            "visited": ["retrieve"],
+        },
     )
 
     async def fake_agent(state):

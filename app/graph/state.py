@@ -37,3 +37,5 @@ class GraphState(TypedDict, total=False):
     pending_ticket: dict | None
     # ch08:本轮工具执行结果 tool_call_id → done/error(前端徽章区分成败)
     tool_status: dict[str, str]
+    # ch09:知识类闸算出的 evidence_confidence(confidence + signals)
+    evidence_confidence: dict | None

@@ -134,29 +134,41 @@ def retrieve_node(state) -> dict:
 
 
 def gate_node(state) -> dict:
-    """置信度闸:按检索得分阈值判定是否进 Agent。"""
-    from app.core.config import get_settings
+    """知识类置信度闸(ch09):三信号 evidence_confidence 判是否进 Agent。"""
+    from app.graph.confidence import CONFIDENCE_THRESHOLD, compute_evidence_confidence
 
-    passed = gate_pass(state.get("retrieval_score"), get_settings().retrieval_threshold)
-    return {"confidence_pass": passed, "visited": ["gate"]}
+    r = compute_evidence_confidence(state.get("retrieval_chunks") or [])
+    passed = r["confidence"] >= CONFIDENCE_THRESHOLD
+    return {"confidence_pass": passed, "evidence_confidence": r, "visited": ["gate"]}
 
 
 def fallback_node(state) -> dict:
-    """知识类证据不足:回兜底话术 + 记 low_confidence_questions(数据飞轮预留)。"""
+    """知识类证据不足:回兜底话术 + 落池(带召回快照 + 置信度信号)。"""
     from langchain_core.messages import AIMessage
 
-    from app.core.config import get_settings
+    from app.graph.confidence import compute_evidence_confidence
     from app.db import SessionLocal
     from app.services.generation_quality import log_low_confidence
 
+    chunks = state.get("retrieval_chunks") or []
+    conf = state.get("evidence_confidence") or compute_evidence_confidence(chunks)
+    snapshot = [
+        {
+            "score": c.score,
+            "section_path": c.section_path or c.category,
+            "answer": c.answer[:200],
+        }
+        for c in chunks[:5]
+    ]
     try:
         with SessionLocal() as s:
             log_low_confidence(
                 s,
-                conversation_id=None,
+                conversation_id=state.get("conversation_id"),
                 raw_question=state.get("resolved_query", ""),
                 source="retrieval_low_conf",
-                reason=f"检索得分低于阈值 {get_settings().retrieval_threshold}",
+                reason=f"evidence_confidence={conf['confidence']} signals={conf['signals']}",
+                retrieved_chunks=snapshot or None,
             )
     except Exception:  # noqa: BLE001 - 记录失败不阻塞主流程
         pass
@@ -320,3 +332,60 @@ async def confirm_ticket(state) -> dict:
         "pending_ticket": None,
         "visited": ["confirm_ticket"],
     }
+
+
+def self_check_node(state) -> dict:
+    """生成阶段自评(ch09):agent 出答案后判证据是否够支撑;不足→落池,不拦答案。
+
+    放在 agent 之后、log 之前。答案已经在 agent 节点里流式发给了用户,
+    这里只做「事后判断 + 落池」,不改/不追加 messages。
+    """
+    from langchain_core.messages import AIMessage
+
+    from app.core.config import get_settings
+    from app.core.llm import get_llm
+    from app.db import SessionLocal
+    from app.services.generation_quality import (
+        format_evidence,
+        log_low_confidence,
+        self_check,
+    )
+
+    answer = ""
+    for m in reversed(state.get("messages", [])):
+        if isinstance(m, AIMessage) and m.content:
+            answer = m.content
+            break
+    chunks = state.get("retrieval_chunks") or []
+    if not answer or not chunks:
+        return {"visited": ["self_check"]}
+
+    try:
+        result = self_check(
+            get_llm(get_settings()), state.get("resolved_query", ""), format_evidence(chunks)
+        )
+    except Exception:  # noqa: BLE001 - 自评失败不拦主流程
+        return {"visited": ["self_check"]}
+
+    if not result.sufficient:
+        snapshot = [
+            {
+                "score": c.score,
+                "section_path": c.section_path or c.category,
+                "answer": c.answer[:200],
+            }
+            for c in chunks[:5]
+        ]
+        try:
+            with SessionLocal() as s:
+                log_low_confidence(
+                    s,
+                    conversation_id=state.get("conversation_id"),
+                    raw_question=state.get("resolved_query", ""),
+                    source="self_check",
+                    reason=result.reason,
+                    retrieved_chunks=snapshot or None,
+                )
+        except Exception:  # noqa: BLE001 - 落池失败不拦主流程
+            pass
+    return {"visited": ["self_check"]}

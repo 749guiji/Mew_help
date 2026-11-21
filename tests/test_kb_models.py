@@ -17,6 +17,8 @@ def test_low_confidence_question_columns():
         "raw_question",
         "source",
         "reason",
+        "retrieved_chunks",
+        "matched_review_id",
         "created_at",
     }
 

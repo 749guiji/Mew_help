@@ -174,6 +174,14 @@ class LowConfidenceQuestion(Base):
         index=True,
     )
     reason = Column(Text, nullable=True)
+    # ch09:落池时的召回片段快照(Top 几条原文+得分)与查重归并落点
+    retrieved_chunks = Column(JSON, nullable=True)
+    matched_review_id = Column(
+        BIGINT_UNSIGNED,
+        ForeignKey("review_queue.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
 
 
@@ -232,3 +240,38 @@ class ToolAuditLog(Base):
     retry_count = Column(Integer, nullable=False, server_default="0")
     duration_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class ReviewQueue(Base):
+    """飞轮待审队列(ch09):一行 = 一个去重后的知识缺口。"""
+
+    __tablename__ = "review_queue"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    normalized_question = Column(String(512), nullable=False)
+    ai_suggested_answer = Column(Text, nullable=True)
+    occurrence_count = Column(Integer, nullable=False, server_default="1")
+    review_status = Column(
+        Enum("待审", "通过", "驳回", native_enum=False),
+        nullable=False,
+        server_default="待审",
+    )
+    approved_answer = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class EvalRun(Base):
+    """自动化评估流水线轮次结果(ch09):一行一轮,按时间连成趋势。"""
+
+    __tablename__ = "eval_runs"
+
+    id = Column(BIGINT_UNSIGNED, primary_key=True, autoincrement=True)
+    triggered_by = Column(
+        Enum("定时", "手动", native_enum=False), nullable=False, server_default="定时"
+    )
+    dataset_size = Column(Integer, nullable=False)
+    metrics = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)

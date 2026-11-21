@@ -227,10 +227,32 @@ def _run_kb_reset() -> dict:
     return {"chunks": n}
 
 
+def _run_flywheel() -> dict:
+    """飞轮流水线:标准化 + 查重 + 入待审队列。"""
+    from app.jobs.flywheel import run_flywheel
+
+    result = run_flywheel()
+    print(
+        f"flywheel: processed={result['processed']} new={result['new']} merged={result['merged']}"
+    )
+    return result
+
+
+def _run_eval() -> dict:
+    """评估流水线:跑检索段指标并落 eval_runs。"""
+    from app.jobs.eval_run import run_eval_and_record
+
+    metrics = run_eval_and_record(triggered_by="手动")
+    print(f"eval-run: {metrics}")
+    return metrics
+
+
 JOB_REGISTRY: dict[str, Job] = {
     "kb-preview": Job("kb-preview", _run_kb_preview, is_heavy=False),
     "kb-build": Job("kb-build", _run_kb_build, is_heavy=False),
     "kb-mine": Job("kb-mine", _run_kb_mine, is_heavy=True),
     "kb-vectorize": Job("kb-vectorize", _run_kb_vectorize, is_heavy=False),
     "kb-reset": Job("kb-reset", _run_kb_reset, is_heavy=True),
+    "flywheel": Job("flywheel", _run_flywheel, is_heavy=True),
+    "eval-run": Job("eval-run", _run_eval, is_heavy=True),
 }

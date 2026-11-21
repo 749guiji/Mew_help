@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     mcp_write_tools: list[str] = []
     mcp_logistics_url: str = "http://127.0.0.1:8100/mcp"
     mcp_aftersale_url: str = "http://127.0.0.1:8101/mcp"
+    # ch09 Langfuse 可观测性(secret 未配则静默跳过)
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_host: str = "http://localhost:3000"
 
     @model_validator(mode="after")
     def _fill_intent_model_defaults(self) -> "Settings":
