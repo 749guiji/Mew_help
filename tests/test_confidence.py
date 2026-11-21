@@ -28,7 +28,13 @@ def test_single_strong_hit_high_confidence():
     r = compute_evidence_confidence([_chunk(1, 0.9)])
     assert r["signals"]["top1_score"] == 0.9
     assert r["signals"]["effective_count"] == 1
-    assert r["confidence"] > 0.6  # 单条强证据 → 高置信
+    assert r["confidence"] > 0.5  # 单条强证据 → 过闸
+
+
+def test_single_weak_hit_low_confidence():
+    r = compute_evidence_confidence([_chunk(1, 0.55)])
+    # 单条弱证据不给满分差,应低于阈值 → 拒答
+    assert r["confidence"] < 0.5
 
 
 def test_gap_detected():

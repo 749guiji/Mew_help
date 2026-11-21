@@ -37,7 +37,7 @@ def compute_evidence_confidence(chunks: list[ScoredChunk]) -> dict:
     scores = [c.score for c in chunks]
     top1 = scores[0]
     top2 = scores[1] if len(scores) > 1 else None
-    gap = (top1 - top2) if top2 is not None else 1.0  # 无 Top2 → 视为充分拉开
+    gap = (top1 - top2) if top2 is not None else 0.0  # 无 Top2 → 无分差可言,不给满分差
     effective = sum(1 for s in scores if s >= _EFFECTIVE_SCORE_FLOOR)
 
     gap_norm = min(max(gap, 0.0) / _GAP_ANCHOR, 1.0)

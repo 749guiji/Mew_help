@@ -19,12 +19,23 @@ def langfuse_enabled() -> bool:
 
 
 def get_langfuse_handler():
-    """返回 Langfuse CallbackHandler;未配置返回 None。"""
+    """返回 Langfuse CallbackHandler;未配置返回 None。
+
+    langfuse SDK 只从 ``os.environ`` 读 secret_key / host(不从 pydantic Settings 读),
+    这里把 Settings 的值桥接进环境变量,否则 .env 里的自部署 key 不生效。
+    """
     if not langfuse_enabled():
         return None
+    import os
+
+    s = get_settings()
+    os.environ.setdefault("LANGFUSE_SECRET_KEY", s.langfuse_secret_key)
+    os.environ.setdefault("LANGFUSE_PUBLIC_KEY", s.langfuse_public_key)
+    os.environ.setdefault("LANGFUSE_HOST", s.langfuse_host)
+
     from langfuse.langchain import CallbackHandler
 
-    return CallbackHandler()
+    return CallbackHandler(public_key=s.langfuse_public_key)
 
 
 def langfuse_trace_name(conv_id, intent: str | None) -> str:
@@ -39,6 +50,6 @@ def langfuse_trace_url(trace_id: str | None) -> str:
     try:
         from langfuse import get_client
 
-        return get_client().get_trace_url(trace_id)
+        return get_client().get_trace_url(trace_id=trace_id)
     except Exception:  # noqa: BLE001
         return ""
