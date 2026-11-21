@@ -16,6 +16,7 @@ from langgraph.types import Command
 from app.db import SessionLocal
 from app.db.models import Conversation, Message
 from app.graph.build import build_graph
+from app.observability import get_langfuse_handler, langfuse_trace_url
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,9 @@ class ChatService:
         """
         graph = self._graph if self._graph is not None else _get_graph()
         config = {"configurable": {"thread_id": str(conv_id)}}
+        handler = get_langfuse_handler()
+        if handler is not None:
+            config["callbacks"] = [handler]
         if isinstance(invoke_input, dict):
             invoke_input = {
                 **invoke_input,
@@ -136,6 +140,19 @@ class ChatService:
                 final_state = data
                 if data.get("__interrupt__"):
                     interrupt_payload = data["__interrupt__"][0].value
+
+        # Langfuse:记下 trace 与意图(意图识别结果进 trace 元数据,便于按意图看 token 花销)
+        if handler is not None and final_state:
+            try:
+                intent = final_state.get("intent")
+                logger.info(
+                    "langfuse trace_id=%s url=%s intent=%s",
+                    handler.last_trace_id,
+                    langfuse_trace_url(handler.last_trace_id),
+                    intent,
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         # 中断帧:退款子流程缺订单号(select_order)或建工单预览(ticket_preview)
         if interrupt_payload is not None:
