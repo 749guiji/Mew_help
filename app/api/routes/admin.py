@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
 from app.db import SessionLocal
-from app.db.models import KnowledgeChunk
+from app.db.models import Conversation, KnowledgeChunk, ReviewQueue, Ticket
 from app.kb.retrieval import _get_store
 
 router = APIRouter()
@@ -62,7 +62,27 @@ def _mcp_card() -> dict:
         return {"key": "mcp", "title": "MCP 服务", "metrics": {}, "error": str(exc)}
 
 
-CARD_BUILDERS = [_kb_card, _mcp_card]
+def _stats_card() -> dict:
+    try:
+        with SessionLocal() as s:
+            convs = s.query(Conversation).count()
+            pending = (
+                s.query(ReviewQueue)
+                .filter(ReviewQueue.review_status == "待审")
+                .count()
+            )
+            tickets = s.query(Ticket).count()
+        return {
+            "key": "stats",
+            "title": "运营概览",
+            "metrics": {"会话数": convs, "待审队列": pending, "工单数": tickets},
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"key": "stats", "title": "运营概览", "metrics": {}, "error": str(exc)}
+
+
+CARD_BUILDERS = [_stats_card, _kb_card, _mcp_card]
 
 
 @router.get("/admin")

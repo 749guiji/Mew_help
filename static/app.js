@@ -93,7 +93,7 @@ function renderHandoff(suggestions, contentEl) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              session_id: state.sessionId,
+              session_id: state.userId,
               description: "用户投诉工单",
               ticket_type: "投诉",
             }),
@@ -322,6 +322,18 @@ function send() {
   );
 }
 
+// 快捷提问 chips:点击填入输入框并直接发送
+function bindQuickAsks() {
+  document.querySelectorAll("#quick-asks .quick-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      if (state.streaming) return;
+      inputEl.value = chip.textContent;
+      send();
+    });
+  });
+}
+bindQuickAsks();
+
 // 订单选择卡片:interrupt 事件渲染,点选后 /api/actions/resume 续跑子流程。
 function renderOrderCards(orders, contentEl) {
   if (!orders || !orders.length) return;
@@ -498,7 +510,7 @@ function renderRefundForm(contentEl, orderId) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          session_id: state.sessionId,
+          session_id: state.userId,
           order_id: orderId,
           reason: select.value,
         }),

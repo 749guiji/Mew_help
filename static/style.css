@@ -100,6 +100,35 @@ body {
   box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
 }
 
+/* 顶部统一导航(四页互通) */
+.topnav {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.topnav a {
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  transition: background var(--dur), color var(--dur);
+}
+
+.topnav a:hover {
+  background: var(--assistant-bubble);
+  color: var(--text);
+}
+
+.topnav a.active {
+  background: var(--brand);
+  color: #fff;
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -260,6 +289,32 @@ body {
   50% {
     opacity: 0.55;
   }
+}
+
+/* 聊天页快捷提问 chips */
+.quick-asks {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 0;
+  flex-wrap: wrap;
+}
+
+.quick-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color var(--dur), color var(--dur), background var(--dur);
+}
+
+.quick-chip:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--assistant-bubble);
 }
 
 .input-area {

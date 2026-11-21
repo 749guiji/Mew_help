@@ -1,24 +1,9 @@
 const cardsEl = document.getElementById("cards");
-const navEl = document.getElementById("admin-nav");
-
-const LINKS = [
-  ["知识库", "/kb"],
-];
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, (ch) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]
   ));
-}
-
-function renderNav() {
-  navEl.innerHTML = "";
-  for (const [label, href] of LINKS) {
-    const a = document.createElement("a");
-    a.href = href;
-    a.textContent = label;
-    navEl.appendChild(a);
-  }
 }
 
 async function loadCards() {
@@ -41,5 +26,23 @@ async function loadCards() {
   }
 }
 
-renderNav();
+// 快捷操作:跑飞轮 / 跑评估(触发后台 job)
+async function runJob(name, btn, label) {
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/jobs/${name}/start`, { method: "POST" });
+    btn.textContent = res.ok ? "已触发 ✓" : "触发失败";
+  } catch (err) {
+    btn.textContent = "触发失败";
+  }
+  setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 2500);
+}
+
+document.getElementById("run-flywheel").addEventListener("click", function () {
+  runJob("flywheel", this, "🔄 跑飞轮");
+});
+document.getElementById("run-eval").addEventListener("click", function () {
+  runJob("eval-run", this, "📊 跑评估");
+});
+
 loadCards();
