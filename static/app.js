@@ -1,4 +1,4 @@
-const state = { userId: localStorage.getItem("mew_user_id"), conversationId: null, streaming: false };
+const state = { userId: localStorage.getItem("mew_user_id"), conversationId: null, streaming: false, lastUserMessage: "" };
 if (!state.userId) {
   state.userId = "u-" + Math.random().toString(36).slice(2, 10);
   localStorage.setItem("mew_user_id", state.userId);
@@ -185,7 +185,18 @@ function addFeedback(contentEl) {
     label.hidden = false;
   }
   up.addEventListener("click", () => lock(up));
-  down.addEventListener("click", () => lock(down));
+  down.addEventListener("click", () => {
+    lock(down);
+    // 👎 → 后端落池(数据飞轮入口三)
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: state.conversationId,
+        message: state.lastUserMessage,
+      }),
+    }).catch(() => {});
+  });
 
   fb.appendChild(up);
   fb.appendChild(down);
@@ -301,6 +312,7 @@ function send() {
   const text = inputEl.value.trim();
   if (!text || state.streaming) return;
   inputEl.value = "";
+  state.lastUserMessage = text; // 👎 落池用:记当轮用户问题
   appendBubble("user", text);
   const contentEl = appendBubble("assistant", "");
   streamTo(
