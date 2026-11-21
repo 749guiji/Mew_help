@@ -5,9 +5,9 @@
 
 import random
 
-from mcp.server import MCPServer
+from mcp.server import FastMCP
 
-mcp = MCPServer("logistics")
+mcp = FastMCP("logistics", port=8100)
 
 
 @mcp.tool()
@@ -18,4 +18,4 @@ def query_logistics(order_id: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", port=8100)
+    mcp.run(transport="streamable-http")

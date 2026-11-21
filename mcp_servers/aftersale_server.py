@@ -5,9 +5,9 @@
 
 import random
 
-from mcp.server import MCPServer
+from mcp.server import FastMCP
 
-mcp = MCPServer("aftersale")
+mcp = FastMCP("aftersale", port=8101)
 
 
 @mcp.tool()
@@ -25,4 +25,4 @@ def check_return_progress(order_id: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", port=8101)
+    mcp.run(transport="streamable-http")
