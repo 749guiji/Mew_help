@@ -54,3 +54,18 @@ def test_admin_script_served():
         r = c.get("/admin.js")
     assert r.status_code == 200
     assert "javascript" in r.headers["content-type"]
+
+
+def test_review_page_served():
+    with TestClient(app) as c:
+        r = c.get("/review")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "待审队列" in r.text
+
+
+def test_review_script_served():
+    with TestClient(app) as c:
+        r = c.get("/review.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]

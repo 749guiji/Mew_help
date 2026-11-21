@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, field_validator
 
 from app.db import SessionLocal
 from app.db.models import KnowledgeChunk, LowConfidenceQuestion, ReviewQueue
 
 router = APIRouter()
+
+STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
+
+
+@router.get("/review")
+def review_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "review.html")
 
 
 class ApproveRequest(BaseModel):
