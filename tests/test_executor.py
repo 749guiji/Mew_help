@@ -159,3 +159,21 @@ def test_mcp_write_not_allowlisted_denied():
     r = _run(ex.execute(tool, {}))
     assert r.kind == "permission_denied"
     assert calls[-1]["status"] == "权限拒绝"
+
+
+def test_create_ticket_schema_rejects_empty_description():
+    from app.tools import registry
+
+    ex = ToolExecutor(retries=0, audit=lambda **kw: None)
+    tool = registry.get("create_ticket")
+    r = _run(ex.execute(tool, {"description": "", "ticket_type": "售后"}))
+    assert r.kind == "validation_error"
+
+
+def test_create_ticket_schema_rejects_refund_type():
+    from app.tools import registry
+
+    ex = ToolExecutor(retries=0, audit=lambda **kw: None)
+    tool = registry.get("create_ticket")
+    r = _run(ex.execute(tool, {"description": "商品破损", "ticket_type": "退款"}))
+    assert r.kind == "validation_error"

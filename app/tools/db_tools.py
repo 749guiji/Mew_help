@@ -4,8 +4,10 @@ import json
 import logging
 import random
 from datetime import datetime
+from typing import Literal
 
 from langchain_core.tools import tool
+from pydantic import Field
 
 from app.core.config import get_settings
 from app.db import SessionLocal
@@ -45,7 +47,10 @@ def query_faq(keyword: str, category: str | None = None) -> str:
 
 
 @tool
-def create_ticket(description: str, ticket_type: str) -> str:
+def create_ticket(
+    description: str = Field(min_length=1),
+    ticket_type: Literal["售后", "投诉", "咨询"] = Field(...),
+) -> str:
     """当用户明确要求人工服务、投诉、或需要记录问题转人工处理时,创建人工工单。ticket_type 取:售后、投诉、咨询。"""
     ticket_no = f"T{datetime.now():%Y%m%d%H%M%S}{random.randint(0, 999):03d}"
     ticket = Ticket(

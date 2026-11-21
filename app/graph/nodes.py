@@ -284,7 +284,10 @@ async def confirm_ticket(state) -> dict:
             )
         except Exception:
             return {
-                "messages": [AIMessage(content="工单创建失败，请稍后重试或联系人工客服。")],
+                "messages": [
+                    ToolMessage(content="工单创建失败", tool_call_id=tool_call_id, name="create_ticket"),
+                    AIMessage(content="工单创建失败，请稍后重试或联系人工客服。"),
+                ],
                 "pending_ticket": None,
                 "visited": ["confirm_ticket"],
             }

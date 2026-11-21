@@ -6,13 +6,13 @@
 
 **Architecture:** 一个 `ToolRegistry` 存 `RegisteredTool`(name/description/json_schema/read_only/source/impl),内置启动时注册、MCP 每轮 `discover()` 现问现拿合成一份;一个 `ToolExecutor` 作为所有工具调用的统一入口(校验→权限→执行→三分类→格式化→审计);create_ticket 走「agent 记 `pending_ticket` → 专用 `confirm_ticket` 节点 `interrupt` 推预览 → resume 放行或拒绝」。
 
-**Tech Stack:** FastAPI · LangChain 1.5 / langchain-core 1.8 · LangGraph 1.2 · `mcp`(SDK v2,`MCPServer`)· `langchain-mcp-adapters`(`MultiServerMCPClient`)· `jsonschema` · SQLAlchemy · MySQL 8。
+**Tech Stack:** FastAPI · LangChain 1.5 / langchain-core 1.8 · LangGraph 1.2 · `mcp`(SDK 1.x,`FastMCP`)· `langchain-mcp-adapters`(`MultiServerMCPClient`)· `jsonschema` · SQLAlchemy · MySQL 8。
 
 **Spec:** `docs/superpowers/specs/2026-11-21-ch08-tool-system-design.md`
 
 ## Global Constraints
 
-- MCP SDK **v2**:`from mcp.server import MCPServer`(v1 的 `FastMCP` 旧 import 已删除);`mcp.run(transport="streamable-http", port=...)`。
+- MCP SDK **1.x**:`from mcp.server import FastMCP`(langchain-mcp-adapters 0.3.2 钉 `mcp<2.0`,v2 的 `MCPServer` 装不上);`FastMCP(name, port=...)` 构造传端口、`mcp.run(transport="streamable-http")`。
 - `MultiServerMCPClient` 用 `await client.get_tools(server_name=...)`;旧 `async with MultiServerMCPClient(...)` 已删除。MCP 工具 `ainvoke` 返回 `(content, artifact)` 元组(content_and_artifact)。
 - MCP 工具名**裸名不加前缀**;审计 `tool_name` 记裸名、`mcp_server` 记来源;`MCP_WRITE_TOOLS` 白名单填裸名。
 - 写操作只有 `create_ticket`(内置 `read_only=False`);MCP 默认只读,只有名在 `MCP_WRITE_TOOLS` 才算写。写默认不自动重试(`retry_count` 恒 0)。
@@ -158,7 +158,7 @@ def test_mcp_write_not_allowlisted_denied():
 - Test: `tests/test_mcp_servers.py`(smoke)
 
 **Interfaces:**
-- Produces: 两个可独立 `python -m mcp_servers.logistics_server` / `aftersale_server` 起进程的模块;工具名 `query_logistics`(物流)、`check_warranty` + `check_return_progress`(售后);`mcp.run(transport="streamable-http", port=8100/8101)` 在 `if __name__ == "__main__"` 下。
+- Produces: 两个可独立 `python -m mcp_servers.logistics_server` / `aftersale_server` 起进程的模块;工具名 `query_logistics`(物流)、`check_warranty` + `check_return_progress`(售后);`FastMCP(name, port=8100/8101)` 构造传端口、`mcp.run(transport="streamable-http")` 在 `if __name__ == "__main__"` 下。
 
 - [ ] **Step 1: 写失败测试** `tests/test_mcp_servers.py`
 
@@ -217,7 +217,7 @@ def test_discover_skips_builtin_name_collision():
 ```
 
 - [ ] **Step 2: 跑测试确认失败** `pytest tests/test_mcp_client.py -v` → FAIL
-- [ ] **Step 3: 实现** `app/mcp/client.py`;`config.py` 加 `mcp_logistics_url="http://127.0.0.1:8100/mcp"`、`mcp_aftersale_url="http://127.0.0.1:8101/mcp"`;`requirements.txt` 加 `mcp`、`langchain-mcp-adapters`(版本按 Context7 已核 API:SDK v2 `MCPServer`、adapters `get_tools`/`streamable_http`)。
+- [ ] **Step 3: 实现** `app/mcp/client.py`;`config.py` 加 `mcp_logistics_url="http://127.0.0.1:8100/mcp"`、`mcp_aftersale_url="http://127.0.0.1:8101/mcp"`;`requirements.txt` 加 `mcp==1.30.0`、`langchain-mcp-adapters==0.3.2`(adapters 钉 `mcp<2.0` → 服务端用 `FastMCP`)。
 - [ ] **Step 4: 跑测试确认通过** `pytest tests/test_mcp_client.py -v` → PASS
 - [ ] **Step 5: 提交** `git commit -m "feat(ch08): MCP Client 现问现拿 discover_mcp_tools"`
 

@@ -3,7 +3,7 @@
 import asyncio
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Command
 
 from app.graph import agent, nodes
@@ -132,3 +132,24 @@ def test_resume_wrong_shape_does_not_crash(monkeypatch, sqlite):
 
     with sqlite() as s:
         assert s.query(Ticket).count() == 0
+
+
+def test_resume_confirm_db_failure_returns_tool_message(monkeypatch, sqlite):
+    import app.tools.db_tools as db_tools
+
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(db_tools, "SessionLocal", boom)  # 覆盖 sqlite fixture,让建单写库失败
+
+    graph = _build(monkeypatch, _PENDING)
+    r1 = _invoke(graph, "帮我建个工单", "t-dbfail", conversation_id=1)
+    assert r1.get("__interrupt__")
+
+    r2 = _resume(graph, {"confirm": True}, "t-dbfail")
+
+    # 失败分支必须补 ToolMessage 配对(避免孤立 tool_call)
+    tms = [m for m in r2["messages"] if isinstance(m, ToolMessage)]
+    assert any(getattr(m, "tool_call_id", None) == "c1" for m in tms)
+    answers = [m for m in r2["messages"] if isinstance(m, AIMessage) and m.content]
+    assert any("工单创建失败" in m.content for m in answers)

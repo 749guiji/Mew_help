@@ -105,11 +105,11 @@ class RegisteredTool:
 
 ### 5.5 MCP Server(两个,独立进程)
 
-`mcp_servers/logistics_server.py` + `mcp_servers/aftersale_server.py`,用官方 SDK v2 的 `MCPServer`(v1 的 `FastMCP` 已改名,旧 import 路径删除):
+`mcp_servers/logistics_server.py` + `mcp_servers/aftersale_server.py`,用官方 SDK **1.x** 的 `FastMCP`(langchain-mcp-adapters 0.3.2 钉 `mcp<2.0`,故服务端须用 v1 的 `FastMCP` 而非 v2 的 `MCPServer`;`port` 在构造时传入):
 
 ```python
-from mcp.server import MCPServer
-mcp = MCPServer("logistics")
+from mcp.server import FastMCP
+mcp = FastMCP("logistics", port=8100)
 
 @mcp.tool()
 def query_logistics(order_id: str) -> str:
@@ -117,7 +117,7 @@ def query_logistics(order_id: str) -> str:
     ...  # 随机 mock,不接真实系统、不建表
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", port=8100)
+    mcp.run(transport="streamable-http")
 ```
 
 - 物流:一个工具 `query_logistics`(随机状态,仿第 2 章)。
