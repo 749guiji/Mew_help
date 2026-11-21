@@ -14,5 +14,6 @@ cryptography==50.0.2
 pymilvus==3.0.3
 milvus-lite==3.2.2
 jieba==0.42.1
+jsonschema==4.26.0
 torch==2.15.0
 sentence-transformers==6.3.0

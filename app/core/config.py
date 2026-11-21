@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     intent_model_api_key: str | None = None
     intent_small_model: str | None = None
     intent_escalate_threshold: float = 0.6
+    # ch08 工具系统
+    tool_timeout_seconds: float = 120.0
+    tool_retries: int = 2
+    mcp_write_tools: list[str] = []
 
     @model_validator(mode="after")
     def _fill_intent_model_defaults(self) -> "Settings":

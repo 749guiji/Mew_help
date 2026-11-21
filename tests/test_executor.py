@@ -1,85 +1,161 @@
-"""Tests for ToolExecutor: timeout, retry, and error handling."""
+"""Tests for the unified tool executor (ch08)."""
 
 import asyncio
 
-from app.tools import TOOL_REGISTRY
+import pytest
+
 from app.tools.executor import ToolExecutor
+from app.tools.registry import RegisteredTool
+
+
+def _rt(name, read_only=True, json_schema=None, impl=None, source="builtin"):
+    return RegisteredTool(
+        name=name,
+        description="d",
+        json_schema=json_schema or {"type": "object", "properties": {}},
+        read_only=read_only,
+        source=source,
+        mcp_server="srv" if source == "mcp" else None,
+        impl=impl or _Ok(),
+    )
 
 
 class _Ok:
-    name = "ok"
-
-    async def ainvoke(self, args):
-        return "fine"
-
-
-class _Boom:
-    name = "boom"
-
-    def __init__(self):
+    def __init__(self, result="fine"):
+        self.result = result
         self.calls = 0
 
     async def ainvoke(self, args):
         self.calls += 1
-        raise RuntimeError("x")
+        return self.result
 
 
-class _Flaky:
-    name = "flaky"
+class _TupleOk:
+    async def ainvoke(self, args):
+        return ("内容", None)
 
+
+class _TimeoutThenOk:
     def __init__(self):
         self.calls = 0
 
     async def ainvoke(self, args):
         self.calls += 1
         if self.calls == 1:
-            raise RuntimeError("boom")
-        return "recovered"
+            raise asyncio.TimeoutError()
+        return "ok"
+
+
+class _Boom:
+    def __init__(self):
+        self.calls = 0
+
+    async def ainvoke(self, args):
+        self.calls += 1
+        raise RuntimeError("boom")
 
 
 class _Slow:
-    name = "slow"
+    def __init__(self):
+        self.calls = 0
 
     async def ainvoke(self, args):
+        self.calls += 1
         await asyncio.sleep(10)
         return "late"
 
 
-def test_execute_success():
-    ex = ToolExecutor(registry={"ok": _Ok()})
-    assert asyncio.run(ex.execute("ok", {})) == "fine"
+def _recorder():
+    calls = []
+
+    def audit(**kw):
+        calls.append(kw)
+
+    return calls, audit
 
 
-def test_execute_retries_then_error_string():
-    boom = _Boom()
-    ex = ToolExecutor(registry={"boom": boom}, retries=1)
-    out = asyncio.run(ex.execute("boom", {}))
-    assert out.startswith("[工具错误]")
-    assert boom.calls == 2
+def _run(coro):
+    return asyncio.run(coro)
 
 
-def test_execute_retries_then_succeeds():
-    flaky = _Flaky()
-    ex = ToolExecutor(registry={"flaky": flaky}, retries=1)
-    out = asyncio.run(ex.execute("flaky", {}))
-    assert out == "recovered"
-    assert flaky.calls == 2
+def test_validation_error_returns_kind_and_audits():
+    calls, audit = _recorder()
+    ex = ToolExecutor(retries=0, audit=audit)
+    tool = _rt("q", json_schema={"type": "object", "required": ["order_id"]})
+    r = _run(ex.execute(tool, {}))
+    assert r.kind == "validation_error"
+    assert calls[-1]["status"] == "校验拦下"
 
 
-def test_execute_timeout_returns_error_string():
-    ex = ToolExecutor(registry={"slow": _Slow()}, timeout=0.01, retries=0)
-    out = asyncio.run(ex.execute("slow", {}))
-    assert out.startswith("[工具错误]")
+def test_read_success_unwraps_tuple_and_audits():
+    calls, audit = _recorder()
+    ex = ToolExecutor(audit=audit)
+    tool = _rt("q", impl=_TupleOk())
+    r = _run(ex.execute(tool, {}))
+    assert r.kind == "ok" and r.content == "内容"
+    assert calls[-1]["status"] == "成功"
 
 
-def test_default_registry_is_tool_registry():
-    ex = ToolExecutor()
-    assert ex.registry is TOOL_REGISTRY
-    assert ex.timeout == 120.0
-    assert ex.retries == 2
+def test_transient_retries_then_recovers():
+    calls, audit = _recorder()
+    impl = _TimeoutThenOk()
+    ex = ToolExecutor(retries=1, audit=audit)
+    tool = _rt("q", impl=impl)
+    r = _run(ex.execute(tool, {}))
+    assert r.kind == "ok" and r.content == "ok"
+    assert impl.calls == 2
+    assert calls[-1]["retry_count"] == 1
 
 
-def test_execute_unknown_tool_returns_error_string():
-    ex = ToolExecutor(registry={})
-    out = asyncio.run(ex.execute("nope", {}))
-    assert out.startswith("[工具错误]")
+def test_business_empty_no_retry():
+    calls, audit = _recorder()
+    impl = _Ok(result="")
+    ex = ToolExecutor(retries=2, audit=audit)
+    tool = _rt("q", impl=impl)
+    r = _run(ex.execute(tool, {}))
+    assert r.kind == "ok" and r.content == ""
+    assert impl.calls == 1  # 正常返回(空)不重试
+    assert calls[-1]["status"] == "成功"
+
+
+def test_non_transient_no_retry():
+    calls, audit = _recorder()
+    impl = _Boom()
+    ex = ToolExecutor(retries=2, audit=audit)
+    tool = _rt("q", impl=impl)
+    r = _run(ex.execute(tool, {}))
+    assert r.kind == "error"
+    assert impl.calls == 1  # 非暂态不重试
+    assert calls[-1]["status"] == "失败"
+
+
+def test_write_needs_confirmation_no_audit():
+    calls, audit = _recorder()
+    ex = ToolExecutor(audit=audit)
+    tool = _rt("create_ticket", read_only=False, impl=_Ok(result="T123"))
+    args = {"description": "x", "ticket_type": "售后"}
+    r = _run(ex.execute(tool, args))
+    assert r.kind == "needs_confirmation"
+    assert r.draft == args
+    assert calls == []  # 确认前不审计
+
+
+def test_write_confirmed_timeout_no_retry():
+    calls, audit = _recorder()
+    impl = _Slow()
+    ex = ToolExecutor(timeout=0.01, audit=audit)
+    tool = _rt("create_ticket", read_only=False, impl=impl)
+    with pytest.raises(asyncio.TimeoutError):
+        _run(ex.execute_confirmed(tool, {"description": "x", "ticket_type": "售后"}))
+    assert impl.calls == 1  # 写不重试
+    assert calls[-1]["status"] == "超时"
+    assert calls[-1]["retry_count"] == 0
+
+
+def test_mcp_write_not_allowlisted_denied():
+    calls, audit = _recorder()
+    ex = ToolExecutor(write_allowlist=set(), audit=audit)
+    tool = _rt("mcp_write", read_only=False, source="mcp", impl=_Ok())
+    r = _run(ex.execute(tool, {}))
+    assert r.kind == "permission_denied"
+    assert calls[-1]["status"] == "权限拒绝"

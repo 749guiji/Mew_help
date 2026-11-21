@@ -66,3 +66,14 @@ def test_intent_model_defaults_follow_main(monkeypatch):
     assert s.intent_model_api_key == s.api_key
     assert s.intent_small_model is None
     assert s.intent_escalate_threshold == 0.6
+
+
+def test_tool_executor_defaults(monkeypatch):
+    from app.core.config import Settings
+
+    for key in ("tool_timeout_seconds", "tool_retries", "mcp_write_tools"):
+        monkeypatch.delenv(key, raising=False)
+    s = Settings(_env_file=None)
+    assert s.tool_timeout_seconds == 120.0
+    assert s.tool_retries == 2
+    assert s.mcp_write_tools == []
