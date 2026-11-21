@@ -35,7 +35,7 @@ evaluation/     # 评估集 + 检索/生成段评估脚本
 scripts/        # 独立脚本（demo_agent_loop / eval_intent / eval_coref / eval_expand / eval_summary …）
 static/         # 聊天 /kb /admin 三页前端
 db/             # MySQL schema.sql
-dev-notes/      # 各章节开发记录（ch01–ch07）
+dev-notes/      # 各章节开发记录（ch01–ch08）
 tests/          # pytest 测试
 ```
 
@@ -57,7 +57,7 @@ tests/          # pytest 测试
 cp .env.example .env   # 按需修改 MODEL / DATABASE_URL 等
 ```
 
-> ch07 上下文预算相关字段（`MODEL_CONTEXT_WINDOW` / `DESIRED_ROUNDS` / `MAX_AGENT_STEPS` 等）均有默认值，见 `app/core/config.py`，通常无需改动。
+> ch07 上下文预算相关字段（`MODEL_CONTEXT_WINDOW` / `DESIRED_ROUNDS` / `MAX_AGENT_STEPS` 等）均有默认值；ch08 的 MCP 地址（`MCP_LOGISTICS_URL` / `MCP_AFTERSALE_URL`）与工具超时/重试（`TOOL_TIMEOUT_SECONDS` / `TOOL_RETRIES`）也均有默认值。见 `app/core/config.py`，通常无需改动。
 
 ### 3. 起 MySQL + 灌知识库
 
@@ -71,9 +71,14 @@ PYTHONPATH=. .venv/Scripts/python.exe -c "from app.db import SessionLocal; from 
 PYTHONPATH=. .venv/Scripts/python.exe -m app.jobs.ingest_docs
 ```
 
-### 4. 启动服务
+### 4. 起两个 MCP Server + 启动服务
 
 ```bash
+# 两个业务 MCP Server 各自独立进程(物流/售后,Streamable HTTP)
+.venv/Scripts/python.exe -m mcp_servers.logistics_server   # 127.0.0.1:8100
+.venv/Scripts/python.exe -m mcp_servers.aftersale_server   # 127.0.0.1:8101
+
+# 客服服务
 .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 # 或 make dev
 ```
@@ -90,7 +95,7 @@ PYTHONPATH=. .venv/Scripts/python.exe -m app.jobs.ingest_docs
 | GET | `/api/conversations/{id}/messages` | 回载会话历史 |
 | GET | `/api/orders?user_id=` | 按用户列订单（订单选择器数据源） |
 | POST | `/api/tickets` | 建工单（转人工 / 退款单复用此表） |
-| POST | `/api/actions/resume` | 挂起子流程续跑（订单选择 / 退款表单提交后） |
+| POST | `/api/actions/resume` | 挂起子流程续跑（订单选择 `order_id` / 建工单确认 `confirm`） |
 | POST | `/api/actions/create-refund` | 提交退款 |
 | GET | `/kb` · `/admin` | 知识库 / 总览后台页 |
 | GET/POST | `/api/kb/*` · `/api/admin/overview` | 知识库与后台接口 |
