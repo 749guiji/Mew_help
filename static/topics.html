@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/kb.css">
 </head>
-<body class="kb-body">
+<body class="kb-body" data-page="topics">
   <main class="kb-card">
     <header class="chat-header">
       <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 3-5"/></svg></span>
@@ -16,14 +16,6 @@
         <p class="status">哪类问题堆得多,一眼看出该先补哪块知识</p>
       </div>
     </header>
-    <nav class="topnav">
-      <a href="/">聊天</a>
-      <a href="/kb">知识库</a>
-      <a href="/review">待审队列</a>
-      <a href="/admin">后台总览</a>
-      <a href="/topics" class="active">主题分布</a>
-      <a href="/acceptance">验收总览</a>
-    </nav>
     <div class="kb-main">
       <section class="kb-section">
         <h2>各类目问题量</h2>
@@ -35,6 +27,7 @@
       </section>
     </div>
   </main>
+  <script src="/admin-shell.js" defer></script>
   <script src="/topics.js" defer></script>
 </body>
 </html>

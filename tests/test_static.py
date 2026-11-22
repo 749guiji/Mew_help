@@ -71,14 +71,23 @@ def test_review_script_served():
     assert "javascript" in r.headers["content-type"]
 
 
-def test_pages_have_topnav():
-    for path in ("/", "/kb", "/admin", "/review"):
+def test_admin_pages_use_shell():
+    paths = ("/kb", "/admin", "/review", "/topics", "/acceptance",
+             "/acceptance/eval", "/acceptance/data", "/acceptance/errors")
+    for path in paths:
         with TestClient(app) as c:
             r = c.get(path)
         assert r.status_code == 200
-        assert 'class="topnav"' in r.text
-        for href in ("/kb", "/review", "/admin"):
-            assert f'href="{href}"' in r.text
+        assert "admin-shell.js" in r.text
+        assert "data-page=" in r.text
+        assert 'class="topnav"' not in r.text
+
+
+def test_acceptance_subpages_map_to_acceptance():
+    for path in ("/acceptance/eval", "/acceptance/data", "/acceptance/errors"):
+        with TestClient(app) as c:
+            r = c.get(path)
+        assert 'data-page="acceptance"' in r.text
 
 
 def test_admin_shell_served():
