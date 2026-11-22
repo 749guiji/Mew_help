@@ -1,6 +1,7 @@
 .kb-body {
   align-items: flex-start;
   padding-top: 24px;
+  gap: 16px;
 }
 
 .kb-card {

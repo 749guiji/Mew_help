@@ -115,3 +115,11 @@ def test_chat_page_isolated():
     assert 'href="/kb"' not in r.text
     assert "管理后台" in r.text
     assert 'href="/admin"' in r.text
+
+
+def test_admin_side_css_present():
+    with TestClient(app) as c:
+        r = c.get("/style.css")
+    assert r.status_code == 200
+    assert ".admin-side" in r.text
+    assert ".topnav" not in r.text

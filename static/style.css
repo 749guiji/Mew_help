@@ -100,33 +100,76 @@ body {
   box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
 }
 
-/* 顶部统一导航(四页互通) */
-.topnav {
+/* 管理端侧栏(admin-shell.js 注入,前端客户端/管理端隔离) */
+.admin-side {
+  width: 200px;
+  flex-shrink: 0;
+  background: #0f172a; /* 沉稳深色,区别于聊天页的浅翡翠 */
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  padding: 12px;
   display: flex;
+  flex-direction: column;
   gap: 4px;
-  padding: 8px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  color: #e2e8f0;
 }
 
-.topnav a {
-  padding: 6px 14px;
+.admin-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #fdba74; /* 活力橙,标识管理端 */
+  border: 1px solid #fdba74;
   border-radius: 999px;
-  color: var(--muted);
+  padding: 2px 8px;
+  align-self: flex-start;
+  margin-bottom: 6px;
+}
+
+.admin-side a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #cbd5e1;
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
   transition: background var(--dur), color var(--dur);
 }
 
-.topnav a:hover {
-  background: var(--assistant-bubble);
-  color: var(--text);
+.admin-side a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
-.topnav a.active {
+.admin-side a.active {
   background: var(--brand);
   color: #fff;
+}
+
+.admin-side a.admin-back {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0;
+}
+
+/* 聊天页侧栏底部的管理后台入口 */
+.admin-link {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--border);
+  transition: color var(--dur);
+  flex-shrink: 0;
+}
+
+.admin-link:hover {
+  color: var(--brand);
 }
 
 .messages {
