@@ -79,3 +79,20 @@ def test_pages_have_topnav():
         assert 'class="topnav"' in r.text
         for href in ("/kb", "/review", "/admin"):
             assert f'href="{href}"' in r.text
+
+
+def test_admin_shell_served():
+    with TestClient(app) as c:
+        r = c.get("/admin-shell.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+
+
+def test_admin_shell_contains_nav():
+    with TestClient(app) as c:
+        r = c.get("/admin-shell.js")
+    text = r.text
+    for label in ("返回聊天", "管理端", "后台总览", "知识库", "待审队列", "主题分布", "验收"):
+        assert label in text
+    for href in ("/admin", "/kb", "/review", "/topics", "/acceptance"):
+        assert f'href="{href}"' in text
