@@ -172,6 +172,15 @@ body {
   color: var(--brand);
 }
 
+/* 管理端侧栏在窄屏下横排,避免固定 200px 挤压内容 */
+@media (max-width: 720px) {
+  .admin-side {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;

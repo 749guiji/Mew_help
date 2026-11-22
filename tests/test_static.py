@@ -123,3 +123,11 @@ def test_admin_side_css_present():
     assert r.status_code == 200
     assert ".admin-side" in r.text
     assert ".topnav" not in r.text
+
+
+def test_admin_side_responsive():
+    with TestClient(app) as c:
+        r = c.get("/style.css")
+    assert r.status_code == 200
+    # 窄屏下管理端侧栏横排(flex-direction: row),避免固定 200px 挤压内容
+    assert "flex-direction: row" in r.text

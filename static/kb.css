@@ -4,6 +4,14 @@
   gap: 16px;
 }
 
+/* 窄屏下管理端侧栏堆到内容上方 */
+@media (max-width: 720px) {
+  .kb-body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .kb-card {
   width: 100%;
   max-width: 860px;
