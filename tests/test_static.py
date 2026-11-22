@@ -105,3 +105,13 @@ def test_admin_shell_contains_nav():
         assert label in text
     for href in ("/admin", "/kb", "/review", "/topics", "/acceptance"):
         assert f'href="{href}"' in text
+
+
+def test_chat_page_isolated():
+    with TestClient(app) as c:
+        r = c.get("/")
+    assert r.status_code == 200
+    assert 'class="topnav"' not in r.text
+    assert 'href="/kb"' not in r.text
+    assert "管理后台" in r.text
+    assert 'href="/admin"' in r.text
